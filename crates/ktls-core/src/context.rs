@@ -8,8 +8,8 @@ use bitfield_struct::bitfield;
 use crate::error::{Error, InvalidMessage, PeerMisbehaved, Result};
 use crate::ffi::{recv_tls_record, send_tls_control_message};
 use crate::tls::{
-    AlertDescription, AlertLevel, ContentType, HandshakeType, KeyUpdateRequest, ProtocolVersion,
-    Session,
+    AlertDescription, AlertLevel, ContentType, HandshakeType, KeyUpdateRequest, Peer,
+    ProtocolVersion, Session,
 };
 use crate::utils::Buffer;
 
@@ -294,6 +294,18 @@ impl<C: Session> Context<C> {
                 HandshakeType::NewSessionTicket
                     if self.session.protocol_version() == ProtocolVersion::TLSv1_3 =>
                 {
+                    if self.session.peer() != Peer::Client {
+                        crate::warn!("TLS 1.2 peer sent a TLS 1.3 NewSessionTicket message");
+
+                        return self.abort(
+                            socket,
+                            InvalidMessage::UnexpectedMessage(
+                                "TLS 1.2 peer sent a TLS 1.3 NewSessionTicket message",
+                            ),
+                            AlertDescription::UnexpectedMessage,
+                        );
+                    }
+
                     if let Err(error) = self
                         .session
                         .handle_new_session_ticket(payload)

@@ -10,6 +10,9 @@ use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 /// implementation should provide the necessary TLS session context management,
 /// including key updates and handling of NewSessionTicket messages.
 pub trait Session {
+    /// Retrieves which peer this session represents (client or server).
+    fn peer(&self) -> Peer;
+
     /// Retrieves the protocol version agreed with the peer.
     fn protocol_version(&self) -> ProtocolVersion;
 
@@ -392,4 +395,14 @@ enum_builder! {
         DTLSv1_2 => 0xFEFD,
         DTLSv1_3 => 0xFEFC,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The peer in a TLS connection: client or server.
+pub enum Peer {
+    /// The client.
+    Client,
+
+    /// The server.
+    Server,
 }
