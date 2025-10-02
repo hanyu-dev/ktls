@@ -1,0 +1,41 @@
+[workspace]
+members = ["crates/ktls-core"]
+default-members = ["crates/ktls-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.83.0"
+authors = ["Hantong Chen <cxwdyx620@gmail.com>"]
+categories = ["network-programming"]
+keywords = ["ktls", "linux", "tls"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/hanyu-dev/ktls"
+
+[workspace.dependencies]
+bitfield-struct = "0.11.0"
+libc = "0.2.176"
+log = "0.4.28"
+nix = "0.30.1"
+tracing = "0.1.41"
+zeroize = "1.8"
+zeroize_derive = "1.4"
+
+[workspace.lints]
+rust.unsafe_code = "warn"
+rust.unused_must_use = "warn"
+rust.elided_lifetimes_in_paths = "warn"
+rust.missing_docs = "warn"
+rust.trivial_casts = "warn"
+rust.trivial_numeric_casts = "warn"
+rust.unreachable_pub = "warn"
+rust.unused_import_braces = "warn"
+rust.unused_extern_crates = "warn"
+rust.unused_qualifications = "warn"
+clippy.alloc_instead_of_core = "warn"
+clippy.exhaustive_enums = "warn"
+clippy.exhaustive_structs = "warn"
+clippy.manual_let_else = "warn"
+clippy.use_self = "warn"
+clippy.upper_case_acronyms = "warn"

@@ -1,0 +1,523 @@
+//! Kernel TLS connection context.
+
+use std::io;
+use std::os::fd::{AsFd, AsRawFd};
+
+use bitfield_struct::bitfield;
+
+use crate::error::{Error, InvalidMessage, PeerMisbehaved, Result};
+use crate::ffi::{recv_tls_record, send_tls_control_message};
+use crate::tls::{
+    AlertDescription, AlertLevel, ContentType, HandshakeType, KeyUpdateRequest, ProtocolVersion,
+    Session,
+};
+use crate::utils::Buffer;
+
+#[derive(Debug)]
+/// The context for managing a kTLS connection.
+pub struct Context<C: Session> {
+    // State of the current kTLS connection
+    state: State,
+
+    // Shared buffer
+    buffer: Buffer,
+
+    // TLS session
+    session: C,
+}
+
+impl<C: Session> Context<C> {
+    /// Creates a new kTLS context with the given TLS session and optional
+    /// buffer (can be TLS early data received from peer during handshake, or
+    /// pre-allocated buffer).
+    pub fn new(session: C, buffer: Option<Buffer>) -> Self {
+        Self {
+            state: State::new(),
+            buffer: buffer.unwrap_or_default(),
+            session,
+        }
+    }
+
+    /// Returns the current kTLS connection state.
+    pub const fn state(&self) -> &State {
+        &self.state
+    }
+
+    /// Returns a reference to the buffer.
+    pub const fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    /// Returns a mutable reference to the buffer.
+    pub const fn buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.buffer
+    }
+
+    /// Handles [`io::Error`]s from I/O operations on kTLS-configured sockets.
+    ///
+    /// # Overview
+    ///
+    /// When a socket is configured with kTLS, it can be used like a normal
+    /// socket for data transmission - the kernel transparently handles
+    /// encryption and decryption. However, TLS control messages (e.g., TLS
+    /// alerts) from peers cannot be processed automatically by the kernel,
+    /// which returns `EIO` to notify userspace.
+    ///
+    /// This method helps handle such errors appropriately:
+    ///
+    /// - **`EIO`**: Attempts to process any received TLS control messages.
+    ///   Returns `Ok(())` on success, allowing the caller to retry the
+    ///   operation.
+    /// - **`BrokenPipe`**: Marks the stream as closed.
+    /// - Other errors: Aborts the connection with an `internal_error` alert and
+    ///   returns the original error.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original [`io::Error`] if it cannot be recovered from.
+    pub fn handle_io_error<S: AsFd>(&mut self, socket: &S, err: io::Error) -> io::Result<()> {
+        if err.raw_os_error() == Some(libc::EIO) {
+            crate::trace!("Received EIO, handling TLS control message");
+
+            self.handle_tls_control_message(socket)?;
+
+            return Ok(());
+        }
+
+        if err.kind() == io::ErrorKind::BrokenPipe {
+            crate::trace!("The underlying stream is closed (BrokenPipe)");
+
+            // No need to send alert, the peer has closed the
+            // connection abruptly.
+        } else {
+            self.send_tls_alert(socket, AlertLevel::Fatal, AlertDescription::InternalError);
+        }
+
+        self.state.set_is_read_closed(true);
+        self.state.set_is_write_closed(true);
+
+        Err(err)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    /// Handles TLS control messages received by kernel.
+    ///
+    /// The caller SHOULD first check if the raw os error returned were
+    /// `EIO`, which indicates that there is a TLS control message available.
+    ///
+    /// But in fact, this method can be called even if there's no TLS control
+    /// message (not recommended to do so).
+    fn handle_tls_control_message<S: AsFd>(&mut self, socket: &S) -> Result<()> {
+        match recv_tls_record(socket.as_fd().as_raw_fd(), &mut self.buffer) {
+            Ok(ContentType::Handshake) => {
+                return self.handle_tls_control_message_handshake(socket);
+            }
+            Ok(ContentType::Alert) => {
+                if let &[level, desc] = self.buffer.unfilled_initialized() {
+                    return self.handle_tls_control_message_alert(
+                        socket,
+                        AlertLevel::from_int(level),
+                        AlertDescription::from_int(desc),
+                    );
+                } else {
+                    // The peer sent an invalid alert. We send back an error
+                    // and close the connection.
+
+                    crate::error!(
+                        "Invalid alert message received: {:?}",
+                        &self.buffer.unfilled_initialized()
+                    );
+
+                    return self.abort(
+                        socket,
+                        InvalidMessage::MessageTooLarge,
+                        InvalidMessage::MessageTooLarge.description(),
+                    );
+                }
+            }
+            Ok(ContentType::ChangeCipherSpec) => {
+                // ChangeCipherSpec should only be sent under the following conditions:
+                //
+                // * TLS 1.2: during a handshake or a rehandshake
+                // * TLS 1.3: during a handshake
+                //
+                // We don't have to worry about handling messages during a handshake
+                // and rustls does not support TLS 1.2 rehandshakes so we just emit
+                // an error here and abort the connection.
+
+                crate::warn!("Received unexpected ChangeCipherSpec message");
+
+                return self.abort(
+                    socket,
+                    PeerMisbehaved::IllegalMiddleboxChangeCipherSpec,
+                    PeerMisbehaved::IllegalMiddleboxChangeCipherSpec.description(),
+                );
+            }
+            Ok(ContentType::ApplicationData) => {
+                // This shouldn't happen in normal operation.
+
+                crate::warn!(
+                    "Received {} bytes of application data, unexpected usage",
+                    self.buffer.unfilled_initialized().len()
+                );
+
+                self.buffer.set_filled_all();
+            }
+            Ok(content_type) => {
+                crate::error!(
+                    "Received unexpected TLS control message: content_type={content_type:?}",
+                );
+
+                return self.abort(
+                    socket,
+                    InvalidMessage::InvalidContentType,
+                    InvalidMessage::InvalidContentType.description(),
+                );
+            }
+            Err(error) => {
+                crate::error!("Failed to receive TLS control message: {error}");
+
+                return self.abort(
+                    socket,
+                    Error::General(error),
+                    AlertDescription::InternalError,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    /// Handles a TLS alert received from the peer.
+    fn handle_tls_control_message_handshake<S: AsFd>(&mut self, socket: &S) -> Result<()> {
+        let mut messages =
+            HandshakeMessagesIter::new(self.buffer.unfilled_initialized()).enumerate();
+
+        while let Some((idx, payload)) = messages.next() {
+            let Ok((handshake_type, payload)) = payload else {
+                return self.abort(
+                    socket,
+                    InvalidMessage::MessageTooShort,
+                    InvalidMessage::MessageTooShort.description(),
+                );
+            };
+
+            match handshake_type {
+                HandshakeType::KeyUpdate
+                    if self.session.protocol_version() == ProtocolVersion::TLSv1_3 =>
+                {
+                    if idx != 0 || messages.next().is_some() {
+                        crate::error!(
+                            "RFC 8446, section 5.1: Handshake messages MUST NOT span key changes."
+                        );
+
+                        return self.abort(
+                            socket,
+                            PeerMisbehaved::KeyEpochWithPendingFragment,
+                            PeerMisbehaved::KeyEpochWithPendingFragment.description(),
+                        );
+                    }
+
+                    let &[payload] = payload else {
+                        crate::error!(
+                            "Received invalid KeyUpdate message, expected 1 byte payload, got: \
+                             {:?}",
+                            payload
+                        );
+
+                        return self.abort(
+                            socket,
+                            InvalidMessage::InvalidKeyUpdate,
+                            InvalidMessage::InvalidKeyUpdate.description(),
+                        );
+                    };
+
+                    let key_update_request = KeyUpdateRequest::from_int(payload);
+
+                    if let Err(error) = self
+                        .session
+                        .update_rx_secret()
+                        .map_err(Error::KeyUpdateFailed)
+                        .and_then(|secret| secret.set(socket))
+                    {
+                        return self.abort(socket, error, AlertDescription::InternalError);
+                    }
+
+                    match key_update_request {
+                        KeyUpdateRequest::UpdateNotRequested => {}
+                        KeyUpdateRequest::UpdateRequested => {
+                            // Notify the peer that we are updating our TX secret as well.
+                            if let Err(error) = send_tls_control_message(
+                                socket.as_fd().as_raw_fd(),
+                                ContentType::Handshake,
+                                &mut [
+                                    HandshakeType::KeyUpdate.to_int(), // typ
+                                    0,
+                                    0,
+                                    1, // length
+                                    KeyUpdateRequest::UpdateNotRequested.to_int(),
+                                ],
+                            )
+                            .map_err(Error::KeyUpdateFailed)
+                            {
+                                // Failed to notify the peer, abort the connection.
+                                crate::error!("Failed to send KeyUpdate message: {error}");
+
+                                return self.abort(socket, error, AlertDescription::InternalError);
+                            }
+
+                            if let Err(error) = self
+                                .session
+                                .update_tx_secret()
+                                .map_err(Error::KeyUpdateFailed)
+                                .and_then(|secret| secret.set(socket))
+                            {
+                                crate::error!("Failed to update TX secret: {error}");
+
+                                return self.abort(socket, error, AlertDescription::InternalError);
+                            }
+                        }
+                        KeyUpdateRequest::Unknown(payload) => {
+                            crate::warn!(
+                                "Received KeyUpdate message with unknown request value: {payload}"
+                            );
+
+                            return self.abort(
+                                socket,
+                                InvalidMessage::InvalidKeyUpdate,
+                                InvalidMessage::InvalidKeyUpdate.description(),
+                            );
+                        }
+                    }
+                }
+                HandshakeType::NewSessionTicket
+                    if self.session.protocol_version() == ProtocolVersion::TLSv1_3 =>
+                {
+                    if let Err(error) = self
+                        .session
+                        .handle_new_session_ticket(payload)
+                        .map_err(Error::HandleNewSessionTicketFailed)
+                    {
+                        return self.abort(socket, error, AlertDescription::InternalError);
+                    };
+                }
+                _ if self.session.protocol_version() == ProtocolVersion::TLSv1_3 => {
+                    crate::error!(
+                        "Unexpected handshake message for a TLS 1.3 connection: \
+                         typ={handshake_type:?}",
+                    );
+
+                    return self.abort(
+                        socket,
+                        InvalidMessage::UnexpectedMessage(
+                            "expected KeyUpdate or NewSessionTicket message",
+                        ),
+                        AlertDescription::UnexpectedMessage,
+                    );
+                }
+                _ => {
+                    crate::error!(
+                        "Unexpected handshake message: ver={:?}, typ={handshake_type:?}",
+                        self.session.protocol_version()
+                    );
+
+                    return self.abort(
+                        socket,
+                        InvalidMessage::UnexpectedMessage(
+                            "handshake messages are not expected on TLS 1.2 connections",
+                        ),
+                        AlertDescription::UnexpectedMessage,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handles a TLS alert received from the peer.
+    fn handle_tls_control_message_alert<S: AsFd>(
+        &mut self,
+        socket: &S,
+        level: AlertLevel,
+        desc: AlertDescription,
+    ) -> Result<()> {
+        match desc {
+            AlertDescription::CloseNotify
+                if self.session.protocol_version() == ProtocolVersion::TLSv1_2 =>
+            {
+                // RFC 5246, section 7.2.1: Unless some other fatal alert has been transmitted,
+                // each party is required to send a close_notify alert before closing the write
+                // side of the connection.  The other party MUST respond with a close_notify
+                // alert of its own and close down the connection immediately, discarding any
+                // pending writes.
+                crate::trace!("Received `close_notify` alert, should shutdown the TLS stream");
+
+                self.shutdown(socket);
+            }
+            AlertDescription::CloseNotify => {
+                // RFC 8446, section 6.1: Each party MUST send a "close_notify" alert before
+                // closing its write side of the connection, unless it has already sent some
+                // error alert. This does not have any effect on its read side of the
+                // connection. Note that this is a change from versions of TLS prior to TLS 1.3
+                // in which implementations were required to react to a "close_notify" by
+                // discarding pending writes and sending an immediate "close_notify" alert of
+                // their own. That previous requirement could cause truncation in the read
+                // side. Both parties need not wait to receive a "close_notify" alert before
+                // closing their read side of the connection, though doing so would introduce
+                // the possibility of truncation.
+
+                crate::trace!(
+                    "Received `close_notify` alert, should shutdown the read side of TLS stream"
+                );
+
+                self.state.set_is_read_closed(true);
+            }
+            _ if self.session.protocol_version() == ProtocolVersion::TLSv1_2
+                && level == AlertLevel::Warning =>
+            {
+                // RFC 5246, section 7.2.2: If an alert with a level of warning
+                // is sent and received, generally the connection can continue
+                // normally.
+
+                crate::warn!("Received non fatal alert, level={level:?}, desc: {desc:?}");
+            }
+            _ => {
+                // All other alerts are treated as fatal and result in us immediately shutting
+                // down the connection and emitting an error.
+
+                crate::error!("Received fatal alert, desc: {desc:?}");
+
+                self.state.set_is_read_closed(true);
+                self.state.set_is_write_closed(true);
+
+                return Err(Error::AlertReceived(desc));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Closes the read side of the kTLS connection and sends a `close_notify`
+    /// alert to the peer.
+    pub fn shutdown<S: AsFd>(&mut self, socket: &S) {
+        crate::trace!("Shutting down the TLS stream with `close_notify` alert...");
+
+        self.send_tls_alert(socket, AlertLevel::Warning, AlertDescription::CloseNotify);
+
+        self.state.set_is_read_closed(true);
+        self.state.set_is_write_closed(true);
+    }
+
+    /// Aborts the kTLS connection and sends a fatal alert to the peer.
+    fn abort<T, S, E, D>(&mut self, socket: &S, error: E, description: D) -> Result<T>
+    where
+        S: AsFd,
+        E: Into<Error>,
+        D: Into<AlertDescription>,
+    {
+        crate::trace!("Aborting the TLS stream with fatal alert...");
+
+        self.send_tls_alert(socket, AlertLevel::Fatal, description.into());
+
+        self.state.set_is_read_closed(true);
+        self.state.set_is_write_closed(true);
+
+        Err(error.into())
+    }
+
+    /// Sends a TLS alert to the peer.
+    fn send_tls_alert<S: AsFd>(
+        &mut self,
+        socket: &S,
+        level: AlertLevel,
+        description: AlertDescription,
+    ) {
+        if !self.state.is_write_closed() {
+            let _ = send_tls_control_message(
+                socket.as_fd().as_raw_fd(),
+                ContentType::Alert,
+                &mut [level.to_int(), description.to_int()],
+            )
+            .inspect_err(|e| {
+                crate::error!("Failed to send alert: {e}");
+            });
+        }
+    }
+}
+
+#[bitfield(u8)]
+/// State of the kTLS connection.
+pub struct State {
+    /// Whether the read side is closed.
+    pub is_read_closed: bool,
+
+    /// Whether the write side is closed.
+    pub is_write_closed: bool,
+
+    #[bits(6)]
+    _reserved: u8,
+}
+
+impl State {
+    /// Returns whether the connection is fully closed (both read and write
+    /// sides).
+    pub const fn is_closed(&self) -> bool {
+        self.is_read_closed() && self.is_write_closed()
+    }
+}
+
+struct HandshakeMessagesIter<'a> {
+    inner: Result<Option<&'a [u8]>, ()>,
+}
+
+impl<'a> HandshakeMessagesIter<'a> {
+    const fn new(payloads: &'a [u8]) -> Self {
+        Self {
+            inner: Ok(Some(payloads)),
+        }
+    }
+}
+
+impl<'a> Iterator for HandshakeMessagesIter<'a> {
+    type Item = Result<(HandshakeType, &'a [u8]), ()>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner {
+            Ok(None) => None,
+            Ok(Some(&[typ, a, b, c, ref rest @ ..])) => {
+                let handshake_type = HandshakeType::from_int(typ);
+                let payload_length = u32::from_be_bytes([0, a, b, c]) as usize;
+
+                let Some((payload, rest)) = rest.split_at_checked(payload_length) else {
+                    crate::error!(
+                        "Received truncated handshake message payload, expected: \
+                         {payload_length}, actual: {}",
+                        rest.len()
+                    );
+
+                    self.inner = Err(());
+
+                    return Some(Err(()));
+                };
+
+                if rest.is_empty() {
+                    self.inner = Ok(None);
+                } else {
+                    self.inner = Ok(Some(rest));
+                }
+
+                Some(Ok((handshake_type, payload)))
+            }
+            Ok(Some(truncated)) => {
+                crate::error!("Received truncated handshake message payload: {truncated:?}");
+
+                self.inner = Err(());
+
+                Some(Err(()))
+            }
+            Err(()) => Some(Err(())),
+        }
+    }
+}
