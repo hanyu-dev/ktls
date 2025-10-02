@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::task;
 
 use ktls_core::utils::Buffer;
-use ktls_core::{Context, Session};
+use ktls_core::{Context, TlsSession};
 #[cfg(feature = "async-io-tokio")]
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -49,7 +49,7 @@ pin_project_lite::pin_project! {
     ///
     /// [RFC 5246, section 7.2.1]: https://tools.ietf.org/html/rfc5246#section-7.2.1
     /// [RFC 8446, section 6.1]: https://tools.ietf.org/html/rfc8446#section-6.1
-    pub struct Stream<S: AsFd, C: Session> {
+    pub struct Stream<S: AsFd, C: TlsSession> {
         #[pin]
         inner: S,
 
@@ -57,7 +57,7 @@ pin_project_lite::pin_project! {
         context: Context<C>,
     }
 
-    impl<S: AsFd, C: Session> PinnedDrop for Stream<S, C> {
+    impl<S: AsFd, C: TlsSession> PinnedDrop for Stream<S, C> {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
 
@@ -66,7 +66,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<S: AsFd, C: Session> Stream<S, C> {
+impl<S: AsFd, C: TlsSession> Stream<S, C> {
     /// Creates a new kTLS stream from the given socket, TLS session and an
     /// optional buffer (may be early data received from peer during
     /// handshaking).
@@ -141,7 +141,7 @@ macro_rules! handle_ret {
 impl<S, C> Read for Stream<S, C>
 where
     S: AsFd + Read,
-    C: Session,
+    C: TlsSession,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         handle_ret!(self, {
@@ -169,7 +169,7 @@ where
 impl<S, C> Stream<S, C>
 where
     S: AsFd + Write,
-    C: Session,
+    C: TlsSession,
 {
     /// Shuts down both read and write sides of the TLS stream.
     pub fn shutdown(&mut self) {
@@ -180,7 +180,7 @@ where
 impl<S, C> Write for Stream<S, C>
 where
     S: AsFd + Write,
-    C: Session,
+    C: TlsSession,
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         handle_ret!(self, {
@@ -219,7 +219,7 @@ macro_rules! handle_ret_async {
 impl<S, C> AsyncRead for Stream<S, C>
 where
     S: AsFd + AsyncRead,
-    C: Session,
+    C: TlsSession,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -248,7 +248,7 @@ where
 impl<S, C> AsyncWrite for Stream<S, C>
 where
     S: AsFd + AsyncWrite,
-    C: Session,
+    C: TlsSession,
 {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -297,11 +297,11 @@ where
 }
 
 /// See [`Stream::as_mut_raw`].
-pub struct StreamRefMutRaw<'a, S: AsFd, C: Session> {
+pub struct StreamRefMutRaw<'a, S: AsFd, C: TlsSession> {
     this: &'a mut Stream<S, C>,
 }
 
-impl<'a, S: AsFd, C: Session> StreamRefMutRaw<'a, S, C> {
+impl<'a, S: AsFd, C: TlsSession> StreamRefMutRaw<'a, S, C> {
     /// Performs an I/O operation on the inner socket, handling possible errors
     /// with [`Context::handle_io_error`].
     pub fn try_io<F, R>(&mut self, mut f: F) -> io::Result<R>
@@ -319,13 +319,13 @@ impl<'a, S: AsFd, C: Session> StreamRefMutRaw<'a, S, C> {
     }
 }
 
-impl<S: AsFd, C: Session> AsFd for StreamRefMutRaw<'_, S, C> {
+impl<S: AsFd, C: TlsSession> AsFd for StreamRefMutRaw<'_, S, C> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.this.inner.as_fd()
     }
 }
 
-impl<S: AsFd, C: Session> AsRawFd for StreamRefMutRaw<'_, S, C> {
+impl<S: AsFd, C: TlsSession> AsRawFd for StreamRefMutRaw<'_, S, C> {
     fn as_raw_fd(&self) -> RawFd {
         self.this.inner.as_fd().as_raw_fd()
     }

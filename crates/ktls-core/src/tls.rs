@@ -8,7 +8,7 @@ use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 /// The kernel only handles TLS encryption and decryption, while the TLS
 /// implementation should provide the necessary TLS session context management,
 /// including key updates and handling of NewSessionTicket messages.
-pub trait Session {
+pub trait TlsSession {
     /// Retrieves which peer this session represents (client or server).
     fn peer(&self) -> Peer;
 

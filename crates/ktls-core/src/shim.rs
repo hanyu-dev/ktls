@@ -7,10 +7,10 @@ use std::io;
 
 use crate::error::{Error, Result};
 use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
-use crate::tls::{AeadKey, ConnectionTrafficSecrets, Peer, ProtocolVersion, Session};
+use crate::tls::{AeadKey, ConnectionTrafficSecrets, Peer, ProtocolVersion, TlsSession};
 
 #[cfg(feature = "shim-rustls")]
-impl Session for rustls::kernel::KernelConnection<rustls::client::ClientConnectionData> {
+impl TlsSession for rustls::kernel::KernelConnection<rustls::client::ClientConnectionData> {
     fn peer(&self) -> Peer {
         Peer::Client
     }
@@ -52,7 +52,7 @@ impl Session for rustls::kernel::KernelConnection<rustls::client::ClientConnecti
 }
 
 #[cfg(feature = "shim-rustls")]
-impl Session for rustls::kernel::KernelConnection<rustls::server::ServerConnectionData> {
+impl TlsSession for rustls::kernel::KernelConnection<rustls::server::ServerConnectionData> {
     fn peer(&self) -> Peer {
         Peer::Server
     }

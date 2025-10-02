@@ -9,13 +9,13 @@ use crate::error::{Error, InvalidMessage, PeerMisbehaved, Result};
 use crate::ffi::{recv_tls_record, send_tls_control_message};
 use crate::tls::{
     AlertDescription, AlertLevel, ContentType, HandshakeType, KeyUpdateRequest, Peer,
-    ProtocolVersion, Session,
+    ProtocolVersion, TlsSession,
 };
 use crate::utils::Buffer;
 
 #[derive(Debug)]
 /// The context for managing a kTLS connection.
-pub struct Context<C: Session> {
+pub struct Context<C: TlsSession> {
     // State of the current kTLS connection
     state: State,
 
@@ -26,7 +26,7 @@ pub struct Context<C: Session> {
     session: C,
 }
 
-impl<C: Session> Context<C> {
+impl<C: TlsSession> Context<C> {
     /// Creates a new kTLS context with the given TLS session and optional
     /// buffer (can be TLS early data received from peer during handshake, or
     /// pre-allocated buffer).

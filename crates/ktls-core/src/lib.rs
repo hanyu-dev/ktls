@@ -12,4 +12,4 @@ pub mod shim;
 pub use self::context::Context;
 pub use self::error::Error;
 pub use self::setup::{setup_tls_params, setup_ulp, TlsCryptoInfoRx, TlsCryptoInfoTx};
-pub use self::tls::{ConnectionTrafficSecrets, ProtocolVersion, Session};
+pub use self::tls::{ConnectionTrafficSecrets, ProtocolVersion, TlsSession};
