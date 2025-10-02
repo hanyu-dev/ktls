@@ -1,7 +1,6 @@
 //! Shim layer for TLS protocol implementations.
 
-use std::io;
-
+use crate::error::Result;
 use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 
 /// TLS session context abstraction.
@@ -22,7 +21,7 @@ pub trait Session {
     ///
     /// This method is called once we send a TLS 1.3 key update message to the
     /// peer.
-    fn update_tx_secret(&mut self) -> io::Result<TlsCryptoInfoTx>;
+    fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx>;
 
     /// Update the traffic secret used for decrypting messages received from the
     /// peer.
@@ -31,7 +30,7 @@ pub trait Session {
     ///
     /// This method is called once we receive a TLS 1.3 key update message from
     /// the peer.
-    fn update_rx_secret(&mut self) -> io::Result<TlsCryptoInfoRx>;
+    fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx>;
 
     /// Handles a `NewSessionTicket` message received from the peer.
     ///
@@ -42,7 +41,7 @@ pub trait Session {
     /// should not include the `msg_type` or `length` fields.
     ///
     /// [RFC 8446 section 4]: https://datatracker.ietf.org/doc/html/rfc8446#section-4
-    fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> io::Result<()>;
+    fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()>;
 }
 
 #[derive(zeroize_derive::ZeroizeOnDrop)]

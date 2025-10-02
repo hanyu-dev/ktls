@@ -238,7 +238,6 @@ impl<C: Session> Context<C> {
                     if let Err(error) = self
                         .session
                         .update_rx_secret()
-                        .map_err(Error::KeyUpdateFailed)
                         .and_then(|secret| secret.set(socket))
                     {
                         return self.abort(socket, error, AlertDescription::InternalError);
@@ -270,7 +269,6 @@ impl<C: Session> Context<C> {
                             if let Err(error) = self
                                 .session
                                 .update_tx_secret()
-                                .map_err(Error::KeyUpdateFailed)
                                 .and_then(|secret| secret.set(socket))
                             {
                                 crate::error!("Failed to update TX secret: {error}");
@@ -309,7 +307,6 @@ impl<C: Session> Context<C> {
                     if let Err(error) = self
                         .session
                         .handle_new_session_ticket(payload)
-                        .map_err(Error::HandleNewSessionTicketFailed)
                     {
                         return self.abort(socket, error, AlertDescription::InternalError);
                     };
