@@ -136,7 +136,7 @@ pub fn acceptor() -> common::Acceptor {
 /// Return an `Acceptor` for tests.
 pub fn acceptor_single_protocol<const TLS12_ONLY: bool>(
     target_cipher: CipherSuite,
-) -> common::Acceptor {
+) -> Option<common::Acceptor> {
     let subject_alt_names = vec!["localhost".to_string()];
 
     let CertifiedKey { cert, signing_key } =
@@ -147,6 +147,15 @@ pub fn acceptor_single_protocol<const TLS12_ONLY: bool>(
     provider
         .cipher_suites
         .retain(|v| v.suite() == target_cipher);
+
+    if provider.cipher_suites.is_empty() {
+        tracing::warn!(
+            "No supported cipher suites for {target_cipher:?}, the current kernel may not support \
+             it."
+        );
+
+        return None;
+    }
 
     tracing::trace!("Using cipher suites: {:#?}", provider.cipher_suites);
 
@@ -168,7 +177,7 @@ pub fn acceptor_single_protocol<const TLS12_ONLY: bool>(
 
     config.enable_secret_extraction = true;
 
-    common::Acceptor::new(Arc::new(config))
+    Some(common::Acceptor::new(Arc::new(config)))
 }
 
 /// Return an `Acceptor` for tests.
@@ -226,7 +235,7 @@ pub async fn test_echo_async(
             .local_addr()
             .context("Cannot get local_addr")?;
 
-        let acceptor = match target_cipher {
+        let Some(acceptor) = (match target_cipher {
             Some(cipher)
                 if cipher
                     .as_str()
@@ -236,7 +245,9 @@ pub async fn test_echo_async(
                 acceptor_single_protocol::<false>(cipher)
             }
             Some(cipher) => acceptor_single_protocol::<true>(cipher),
-            None => acceptor(),
+            None => Some(acceptor()),
+        }) else {
+            return Ok(());
         };
 
         let handle = tokio::spawn(echo_server(
