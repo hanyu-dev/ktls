@@ -454,7 +454,7 @@ impl<C: TlsSession> Context<C> {
                 &mut [level.to_int(), description.to_int()],
             )
             .inspect_err(|e| {
-                crate::error!("Failed to send alert: {e}");
+                crate::trace!("Failed to send alert: {e}");
             });
         }
     }
