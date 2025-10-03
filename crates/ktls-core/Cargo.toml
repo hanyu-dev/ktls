@@ -1,6 +1,6 @@
 [package]
 name = "ktls-core"
-version = "0.0.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -10,7 +10,7 @@ Abstraction for implementing Linux kernel TLS (kTLS) offload in Rust.
 """
 keywords.workspace = true
 license.workspace = true
-readme.workspace = true
+readme = "README.md"
 repository.workspace = true
 
 [package.metadata.docs.rs]
