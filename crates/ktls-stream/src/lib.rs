@@ -226,16 +226,30 @@ where
     }
 }
 
-impl<S, C> Stream<S, C>
-where
-    S: AsFd + Write,
-    C: TlsSession,
-{
-    /// Shuts down both read and write sides of the TLS stream.
-    pub fn shutdown(&mut self) {
-        self.context.shutdown(&self.inner);
-    }
+macro_rules! impl_shutdown {
+    ($ty:ty) => {
+        impl<C> Stream<$ty, C>
+        where
+            C: TlsSession,
+        {
+            /// Shuts down both read and write sides of the TLS stream.
+            pub fn shutdown(&mut self) {
+                let is_write_closed = self.context.state().is_write_closed();
+
+                self.context.shutdown(&self.inner);
+
+                if !is_write_closed {
+                    let _ = self
+                        .inner
+                        .shutdown(std::net::Shutdown::Write);
+                }
+            }
+        }
+    };
 }
+
+impl_shutdown!(std::net::TcpStream);
+impl_shutdown!(std::os::unix::net::UnixStream);
 
 impl<S, C> Write for Stream<S, C>
 where
@@ -256,7 +270,14 @@ where
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        handle_ret!(self, self.inner.flush())
+        handle_ret!(self, {
+            if self.context.state().is_write_closed() {
+                // Write side is closed, return directly.
+                return Ok(());
+            }
+
+            self.inner.flush()
+        })
     }
 }
 
@@ -348,11 +369,17 @@ where
     ) -> task::Poll<io::Result<()>> {
         let this = self.project();
 
+        let is_write_closed = this.context.state().is_write_closed();
+
         // Notify the peer that we're going to close the write side.
         this.context.shutdown(&*this.inner);
 
-        // Then shutdown the inner socket.
-        this.inner.poll_shutdown(cx)
+        if is_write_closed {
+            // Then shutdown the inner socket.
+            this.inner.poll_shutdown(cx)
+        } else {
+            task::Poll::Ready(Ok(()))
+        }
     }
 }
 

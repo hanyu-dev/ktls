@@ -415,7 +415,11 @@ impl<C: TlsSession> Context<C> {
 
         self.send_tls_alert(socket, AlertLevel::Warning, AlertDescription::CloseNotify);
 
-        self.state.set_is_read_closed(true);
+        if self.session.protocol_version() == ProtocolVersion::TLSv1_2 {
+            // See RFC 5246, section 7.2.1
+            self.state.set_is_read_closed(true);
+        }
+
         self.state.set_is_write_closed(true);
     }
 
