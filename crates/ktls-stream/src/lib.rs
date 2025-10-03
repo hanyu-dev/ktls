@@ -374,8 +374,7 @@ where
         // Notify the peer that we're going to close the write side.
         this.context.shutdown(&*this.inner);
 
-        if is_write_closed {
-            // Then shutdown the inner socket.
+        if !is_write_closed {
             this.inner.poll_shutdown(cx)
         } else {
             task::Poll::Ready(Ok(()))
