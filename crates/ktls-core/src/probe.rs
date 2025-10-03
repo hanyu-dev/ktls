@@ -127,3 +127,11 @@ pub struct Compatibility {
     /// ARIA-256-GCM cipher suite support.
     pub aria_256_gcm: bool,
 }
+
+impl Compatibility {
+    /// Returns whether no cipher suites are supported (the corresponding TLS
+    /// version is unsupported).
+    pub const fn is_unsupported(&self) -> bool {
+        self.0 == 0
+    }
+}
