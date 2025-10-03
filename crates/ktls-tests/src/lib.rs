@@ -38,7 +38,7 @@ static COMPATIBILITIES: LazyLock<Compatibilities> = LazyLock::new(|| {
     compatibility
 });
 
-static CRYPTO_PROVIDER: LazyLock<Arc<CryptoProvider>> = LazyLock::new(|| {
+static CRYPTO_PROVIDER: LazyLock<CryptoProvider> = LazyLock::new(|| {
     let mut provider = rustls::crypto::ring::default_provider();
 
     provider
@@ -84,7 +84,7 @@ static CRYPTO_PROVIDER: LazyLock<Arc<CryptoProvider>> = LazyLock::new(|| {
             }
         });
 
-    Arc::new(provider)
+    provider
 });
 
 static PROTOCOL_VERSIONS: LazyLock<&'static [&'static SupportedProtocolVersion]> =
@@ -104,6 +104,9 @@ static PROTOCOL_VERSIONS: LazyLock<&'static [&'static SupportedProtocolVersion]>
         }
     });
 
+static PROTOCOL_VERSIONS_TLS12: LazyLock<&'static [&'static SupportedProtocolVersion]> =
+    LazyLock::new(|| &rustls::DEFAULT_VERSIONS[1..]);
+
 /// Return an `Acceptor` for tests.
 pub fn acceptor() -> common::Acceptor {
     let subject_alt_names = vec!["localhost".to_string()];
@@ -111,8 +114,46 @@ pub fn acceptor() -> common::Acceptor {
     let CertifiedKey { cert, signing_key } =
         generate_simple_self_signed(subject_alt_names).unwrap();
 
-    let mut config = ServerConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
+    let mut config = ServerConfig::builder_with_provider(Arc::new(CRYPTO_PROVIDER.clone()))
         .with_protocol_versions(PROTOCOL_VERSIONS.as_ref())
+        .expect("invalid protocol versions")
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.der().clone()],
+            PrivateKeyDer::try_from(signing_key.serialized_der())
+                .expect("invalid key")
+                .clone_key(),
+        )
+        .expect("invalid certificate/key");
+
+    config.enable_secret_extraction = true;
+
+    common::Acceptor::new(Arc::new(config))
+}
+
+/// Return an `Acceptor` for tests.
+pub fn acceptor_single_protocol<const TLS12_ONLY: bool>(
+    target_cipher: CipherSuite,
+) -> common::Acceptor {
+    let subject_alt_names = vec!["localhost".to_string()];
+
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(subject_alt_names).unwrap();
+
+    let mut provider = CRYPTO_PROVIDER.clone();
+
+    provider
+        .cipher_suites
+        .retain(|v| v.suite() == target_cipher);
+
+    tracing::trace!("Using cipher suites: {:#?}", provider.cipher_suites);
+
+    let mut config = ServerConfig::builder_with_provider(Arc::new(provider))
+        .with_protocol_versions(if TLS12_ONLY {
+            PROTOCOL_VERSIONS_TLS12.as_ref()
+        } else {
+            PROTOCOL_VERSIONS.as_ref()
+        })
         .expect("invalid protocol versions")
         .with_no_client_auth()
         .with_single_cert(
@@ -137,7 +178,7 @@ pub fn cached_acceptor() -> common::Acceptor {
 
 /// Return a `Connector` for tests.
 pub fn connector() -> common::Connector {
-    let mut config = rustls::ClientConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
+    let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(CRYPTO_PROVIDER.clone()))
         .with_protocol_versions(PROTOCOL_VERSIONS.as_ref())
         .expect("invalid protocol versions")
         .dangerous()
@@ -167,7 +208,10 @@ pub static SERVER_NAME: LazyLock<ServerName<'static>> =
 
 #[tracing::instrument(err)]
 /// Test: echo (async)
-pub async fn test_echo_async(termination: Termination) -> Result<()> {
+pub async fn test_echo_async(
+    termination: Termination,
+    target_cipher: Option<CipherSuite>,
+) -> Result<()> {
     let send_back_data_notify = Arc::new(Notify::new());
 
     let (server_addr, server_handle) = {
@@ -179,7 +223,18 @@ pub async fn test_echo_async(termination: Termination) -> Result<()> {
             .local_addr()
             .context("Cannot get local_addr")?;
 
-        let acceptor = acceptor();
+        let acceptor = match target_cipher {
+            Some(cipher)
+                if cipher
+                    .as_str()
+                    .unwrap()
+                    .starts_with("TLS13") =>
+            {
+                acceptor_single_protocol::<false>(cipher)
+            }
+            Some(cipher) => acceptor_single_protocol::<true>(cipher),
+            None => acceptor(),
+        };
 
         let handle = tokio::spawn(echo_server(
             listener,
