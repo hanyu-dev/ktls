@@ -4,6 +4,8 @@ pub mod context;
 pub mod error;
 pub mod ffi;
 mod log;
+#[cfg(feature = "probe-ktls-compatibility")]
+pub mod probe;
 pub mod setup;
 pub mod shim;
 pub mod tls;

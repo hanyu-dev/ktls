@@ -34,6 +34,9 @@ log = ["dep:log"]
 # Logging support with `tracing` crate
 tracing = ["dep:tracing"]
 
+# Enable kernel TLS support probe utilities
+probe-ktls-compatibility = []
+
 # Shim layer for `rustls` crate
 shim-rustls = ["dep:rustls"]
 
