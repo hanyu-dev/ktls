@@ -5,9 +5,9 @@ pub mod error;
 pub mod ffi;
 mod log;
 pub mod setup;
+pub mod shim;
 pub mod tls;
 pub mod utils;
-pub mod shim;
 
 pub use self::context::Context;
 pub use self::error::Error;
