@@ -124,8 +124,9 @@ impl<C: TlsSession> Context<C> {
                     // and close the connection.
 
                     crate::error!(
-                        "Invalid alert message received: {:?}",
-                        &self.buffer.unfilled_initialized()
+                        "Invalid alert message received: {:?}, {:?}",
+                        self.buffer.unfilled_initialized(),
+                        self.buffer
                     );
 
                     return self.abort(

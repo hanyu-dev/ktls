@@ -141,6 +141,8 @@ impl Buffer {
     /// Returns a mutable reference to the unfilled part of the buffer without
     /// ensuring that it has been fully initialized.
     pub(crate) fn unfilled_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        self.unfilled_initialized = 0;
+
         self.inner.spare_capacity_mut()
     }
 
