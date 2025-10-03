@@ -2,6 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/ktls-core)](https://crates.io/crates/ktls-core)
 [![Docs.rs](https://docs.rs/ktls-core/badge.svg)](https://docs.rs/ktls-core)
+[![Code Coverage](https://codecov.io/github/hanyu-dev/ktls/graph/badge.svg?token=vwYtOhk2cV)](https://codecov.io/github/hanyu-dev/ktls)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 Abstraction for implementing Linux kernel TLS (kTLS) offload in Rust.
