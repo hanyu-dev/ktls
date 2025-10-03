@@ -14,6 +14,7 @@ repository.workspace = true
 ktls-core = { path = "../ktls-core" }
 log = { workspace = true, optional = true }
 pin-project-lite = { workspace = true }
+rustls = { workspace = true, default-features = false, optional = true }
 tokio = { workspace = true, features = ["net"], optional = true }
 tracing = { workspace = true, optional = true }
 
@@ -28,6 +29,9 @@ log = ["dep:log", "ktls-core/log"]
 
 # Logging support with `tracing` crate
 tracing = ["dep:tracing", "ktls-core/tracing"]
+
+# Shim layer for `rustls` crate
+shim-rustls = ["dep:rustls", "ktls-core/shim-rustls"]
 
 [lints]
 workspace = true

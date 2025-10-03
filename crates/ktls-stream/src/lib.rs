@@ -83,6 +83,63 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
         }
     }
 
+    #[cfg(feature = "shim-rustls")]
+    /// Constructs a new [`Stream`] from a socket, TLS secrets, and TLS session
+    /// context.
+    ///
+    /// # Overview
+    ///
+    /// This creates a [`Stream`] from the provided socket, extracted TLS
+    /// secrets ([`rustls::ExtractedSecrets`]), and TLS session context
+    /// ([`rustls::kernel::KernelConnection`]). An optional buffer may be
+    /// provided for early data received during handshake.
+    ///
+    /// The secrets and context must be extracted from a
+    /// [`rustls::client::UnbufferedClientConnection`] or
+    /// [`rustls::client::BufferedClientConnection`]. See [`rustls::kernel`]
+    /// module documentation for more details.
+    ///
+    /// ## Prerequisites
+    ///
+    /// The socket must have TLS ULP configured with
+    /// [`setup_ulp`](ktls_core::setup_ulp).
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if prerequisites aren't met or kernel TLS setup fails.
+    pub fn new_rustls<Data>(
+        socket: S,
+        secrets: rustls::ExtractedSecrets,
+        session: rustls::kernel::KernelConnection<Data>,
+        buffer: Option<Buffer>,
+    ) -> Result<Stream<S, rustls::kernel::KernelConnection<Data>>, ktls_core::Error>
+    where
+        rustls::kernel::KernelConnection<Data>: TlsSession,
+    {
+        use ktls_core::{TlsCryptoInfoRx, TlsCryptoInfoTx};
+
+        let rustls::ExtractedSecrets {
+            tx: (seq_tx, secrets_tx),
+            rx: (seq_rx, secrets_rx),
+        } = secrets;
+
+        let tls_crypto_info_tx = TlsCryptoInfoTx::new(
+            session.protocol_version().into(),
+            secrets_tx.try_into()?,
+            seq_tx,
+        )?;
+
+        let tls_crypto_info_rx = TlsCryptoInfoRx::new(
+            session.protocol_version().into(),
+            secrets_rx.try_into()?,
+            seq_rx,
+        )?;
+
+        ktls_core::setup_tls_params(&socket, tls_crypto_info_tx, tls_crypto_info_rx)?;
+
+        Ok(Stream::new(socket, session, buffer))
+    }
+
     /// Returns a mutable reference to the inner socket if the TLS connection is
     /// not closed (unidirectionally or bidirectionally).
     ///
