@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Received Ctrl + C...");
         }
-        _ = ktls_tests::echo_server_loop(
+        () = ktls_tests::echo_server_loop(
             listener, acceptor, ktls_tests::Termination::Client, None
         ) => {}
     }

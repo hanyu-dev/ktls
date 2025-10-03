@@ -50,11 +50,9 @@ impl Error {
     /// Returns `true` if the error indicates that kTLS is totally not supported
     /// by the running kernel (e.g., kernel module `tls` not being enabled or
     /// the kernel version being too old)
+    #[must_use]
     pub fn is_ktls_unsupported(&self) -> bool {
-        match self {
-            Self::Ulp(e) if e.raw_os_error() == Some(libc::ENOENT) => true,
-            _ => false,
-        }
+        matches!(self, Self::Ulp(e) if e.raw_os_error() == Some(libc::ENOENT))
     }
 }
 
@@ -93,6 +91,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        #[allow(clippy::match_same_arms)]
         match self {
             Self::Ulp(e) => Some(e),
             Self::CryptoMaterialTx(e) => Some(e),
@@ -151,8 +150,9 @@ pub enum InvalidMessage {
 impl InvalidMessage {
     pub(crate) const fn description(&self) -> AlertDescription {
         match self {
-            Self::InvalidContentType => AlertDescription::UnexpectedMessage,
-            Self::UnexpectedMessage(_) => AlertDescription::UnexpectedMessage,
+            Self::InvalidContentType | Self::UnexpectedMessage(_) => {
+                AlertDescription::UnexpectedMessage
+            }
             _ => AlertDescription::DecodeError,
         }
     }
@@ -251,8 +251,9 @@ pub enum PeerMisbehaved {
 impl PeerMisbehaved {
     pub(crate) const fn description(&self) -> AlertDescription {
         match self {
-            Self::KeyEpochWithPendingFragment => AlertDescription::UnexpectedMessage,
-            Self::IllegalMiddleboxChangeCipherSpec => AlertDescription::UnexpectedMessage,
+            Self::KeyEpochWithPendingFragment | Self::IllegalMiddleboxChangeCipherSpec => {
+                AlertDescription::UnexpectedMessage
+            }
             #[allow(unreachable_patterns)]
             _ => AlertDescription::InternalError,
         }

@@ -83,9 +83,8 @@ where
         ktls_stream
             .write_all(
                 format!(
-                    "GET / HTTP/1.1\r\nHost: {}\r\nconnection: keep-alive\r\naccept-encoding: \
-                     identity\r\ntransfer-encoding: identity\r\n\r\n",
-                    server_name
+                    "GET / HTTP/1.1\r\nHost: {server_name}\r\nconnection: keep-alive\r\naccept-encoding: \
+                     identity\r\ntransfer-encoding: identity\r\n\r\n"
                 )
                 .as_bytes(),
             )
@@ -117,12 +116,11 @@ where
                 String::from_utf8_lossy(has_read_bytes)
             );
 
+            #[allow(clippy::items_after_statements)]
             const PREFIX: &[u8; 16] = b"content-length: ";
 
             if has_read_bytes
-                .get(..PREFIX.len())
-                .map(|v| v.eq_ignore_ascii_case(PREFIX))
-                == Some(true)
+                .get(..PREFIX.len()).is_some_and(|v| v.eq_ignore_ascii_case(PREFIX))
             {
                 let v = std::str::from_utf8(&has_read_bytes[PREFIX.len()..])
                     .expect("content length should be a number string")
@@ -254,7 +252,7 @@ async fn test_tls_resumption_impl(server_name: &'static str) -> Result<()> {
             ktls_stream.handshake_kind,
             Some(rustls::HandshakeKind::Resumed),
             "Session was not resumed for {server_name}",
-        )
+        );
     }
 
     Ok(())

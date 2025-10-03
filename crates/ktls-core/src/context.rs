@@ -119,22 +119,22 @@ impl<C: TlsSession> Context<C> {
                         AlertLevel::from_int(level),
                         AlertDescription::from_int(desc),
                     );
-                } else {
-                    // The peer sent an invalid alert. We send back an error
-                    // and close the connection.
-
-                    crate::error!(
-                        "Invalid alert message received: {:?}, {:?}",
-                        self.buffer.unfilled_initialized(),
-                        self.buffer
-                    );
-
-                    return self.abort(
-                        socket,
-                        InvalidMessage::MessageTooLarge,
-                        InvalidMessage::MessageTooLarge.description(),
-                    );
                 }
+
+                // The peer sent an invalid alert. We send back an error
+                // and close the connection.
+
+                crate::error!(
+                    "Invalid alert message received: {:?}, {:?}",
+                    self.buffer.unfilled_initialized(),
+                    self.buffer
+                );
+
+                return self.abort(
+                    socket,
+                    InvalidMessage::MessageTooLarge,
+                    InvalidMessage::MessageTooLarge.description(),
+                );
             }
             Ok(ContentType::ChangeCipherSpec) => {
                 // ChangeCipherSpec should only be sent under the following conditions:
@@ -164,9 +164,9 @@ impl<C: TlsSession> Context<C> {
 
                 self.buffer.set_filled_all();
             }
-            Ok(content_type) => {
+            Ok(_content_type) => {
                 crate::error!(
-                    "Received unexpected TLS control message: content_type={content_type:?}",
+                    "Received unexpected TLS control message: content_type={_content_type:?}",
                 );
 
                 return self.abort(
@@ -277,9 +277,9 @@ impl<C: TlsSession> Context<C> {
                                 return self.abort(socket, error, AlertDescription::InternalError);
                             }
                         }
-                        KeyUpdateRequest::Unknown(payload) => {
+                        KeyUpdateRequest::Unknown(_payload) => {
                             crate::warn!(
-                                "Received KeyUpdate message with unknown request value: {payload}"
+                                "Received KeyUpdate message with unknown request value: {_payload}"
                             );
 
                             return self.abort(
@@ -310,7 +310,7 @@ impl<C: TlsSession> Context<C> {
                         .handle_new_session_ticket(payload)
                     {
                         return self.abort(socket, error, AlertDescription::InternalError);
-                    };
+                    }
                 }
                 _ if self.session.protocol_version() == ProtocolVersion::TLSv1_3 => {
                     crate::error!(
@@ -454,8 +454,8 @@ impl<C: TlsSession> Context<C> {
                 ContentType::Alert,
                 &mut [level.to_int(), description.to_int()],
             )
-            .inspect_err(|e| {
-                crate::trace!("Failed to send alert: {e}");
+            .inspect_err(|_e| {
+                crate::trace!("Failed to send alert: {_e}");
             });
         }
     }
@@ -477,6 +477,7 @@ pub struct State {
 impl State {
     /// Returns whether the connection is fully closed (both read and write
     /// sides).
+    #[must_use]
     pub const fn is_closed(&self) -> bool {
         self.is_read_closed() && self.is_write_closed()
     }
@@ -524,8 +525,8 @@ impl<'a> Iterator for HandshakeMessagesIter<'a> {
 
                 Some(Ok((handshake_type, payload)))
             }
-            Ok(Some(truncated)) => {
-                crate::error!("Received truncated handshake message payload: {truncated:?}");
+            Ok(Some(_truncated)) => {
+                crate::error!("Received truncated handshake message payload: {_truncated:?}");
 
                 self.inner = Err(());
 

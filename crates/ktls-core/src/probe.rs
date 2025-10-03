@@ -8,6 +8,7 @@ use bitfield_struct::bitfield;
 use crate::setup::{setup_ulp, TlsCryptoInfoTx};
 use crate::tls::{AeadKey, ConnectionTrafficSecrets, ProtocolVersion};
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
 /// The current Linux kernel's kTLS cipher suites compatibility.
 pub struct Compatibilities {
@@ -55,9 +56,9 @@ impl Compatibilities {
                 if TlsCryptoInfoTx::new(
                     ProtocolVersion::$ver,
                     ConnectionTrafficSecrets::$cipher {
-                        key: AeadKey::new([0; _]),
-                        iv: [0; _],
-                        salt: [0; _],
+                        key: AeadKey::new(Default::default()),
+                        iv: Default::default(),
+                        salt: Default::default(),
                     },
                     0,
                 )
@@ -131,6 +132,7 @@ pub struct Compatibility {
 impl Compatibility {
     /// Returns whether no cipher suites are supported (the corresponding TLS
     /// version is unsupported).
+    #[must_use] 
     pub const fn is_unsupported(&self) -> bool {
         self.0 == 0
     }

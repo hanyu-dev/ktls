@@ -74,7 +74,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     /// # Prerequisites
     ///
     /// - The socket must have TLS ULP configured with
-    /// [setup_ulp](ktls_core::setup_ulp).
+    ///   [`setup_ulp`](ktls_core::setup_ulp).
     /// - The TLS handshake must be completed.
     pub fn new(socket: S, session: C, buffer: Option<Buffer>) -> Self {
         Self {
@@ -92,7 +92,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     /// ## Notes
     ///
     /// * All buffered data **MUST** be properly consumed (See
-    ///   [AccessRawStreamError::HasBufferedData]).
+    ///   [`AccessRawStreamError::HasBufferedData`]).
     ///
     ///   The buffered data typically consists of:
     ///
@@ -106,9 +106,13 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     ///
     /// * The caller **MUST NOT** shutdown the inner socket directly, which will
     ///   lead to undefined behaviours. Instead, the caller **MAY** call
-    ///   `(poll_)shutdown` explictly on the [`KtlsStream`] to gracefully
-    ///   shutdown the TLS stream (with `close_notify` be sent) manually, or
-    ///   just drop the stream to do automatic graceful shutdown.
+    ///   `(poll_)shutdown` explictly on the [`Stream`] to gracefully shutdown
+    ///   the TLS stream (with `close_notify` be sent) manually, or just drop
+    ///   the stream to do automatic graceful shutdown.
+    /// 
+    /// # Errors
+    /// 
+    /// See [`AccessRawStreamError`].
     pub fn as_mut_raw(&mut self) -> Result<StreamRefMutRaw<'_, S, C>, AccessRawStreamError> {
         if let Some(buffer) = self.context.buffer_mut().drain() {
             return Err(AccessRawStreamError::HasBufferedData(buffer));
@@ -143,7 +147,7 @@ where
     ///
     /// The secrets and context must be extracted from a
     /// [`rustls::client::UnbufferedClientConnection`] or
-    /// [`rustls::client::BufferedClientConnection`]. See [`rustls::kernel`]
+    /// [`rustls::client::UnbufferedClientConnection`]. See [`rustls::kernel`]
     /// module documentation for more details.
     ///
     /// ## Prerequisites
@@ -179,9 +183,9 @@ where
             seq_rx,
         )?;
 
-        ktls_core::setup_tls_params(&socket, tls_crypto_info_tx, tls_crypto_info_rx)?;
+        ktls_core::setup_tls_params(&socket, &tls_crypto_info_tx, &tls_crypto_info_rx)?;
 
-        Ok(Stream::new(socket, session, buffer))
+        Ok(Self::new(socket, session, buffer))
     }
 }
 
@@ -374,10 +378,10 @@ where
         // Notify the peer that we're going to close the write side.
         this.context.shutdown(&*this.inner);
 
-        if !is_write_closed {
-            this.inner.poll_shutdown(cx)
-        } else {
+        if is_write_closed {
             task::Poll::Ready(Ok(()))
+        } else {
+            this.inner.poll_shutdown(cx)
         }
     }
 }
@@ -387,9 +391,13 @@ pub struct StreamRefMutRaw<'a, S: AsFd, C: TlsSession> {
     this: &'a mut Stream<S, C>,
 }
 
-impl<'a, S: AsFd, C: TlsSession> StreamRefMutRaw<'a, S, C> {
+impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
     /// Performs an I/O operation on the inner socket, handling possible errors
     /// with [`Context::handle_io_error`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the original I/O error that is unrecoverable.
     pub fn try_io<F, R>(&mut self, mut f: F) -> io::Result<R>
     where
         F: FnMut(&mut S) -> io::Result<R>,
@@ -398,6 +406,10 @@ impl<'a, S: AsFd, C: TlsSession> StreamRefMutRaw<'a, S, C> {
     }
 
     /// See [`Context::handle_io_error`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the original I/O error that is unrecoverable.
     pub fn handle_io_error(&mut self, err: io::Error) -> io::Result<()> {
         self.this
             .context
@@ -417,6 +429,7 @@ impl<S: AsFd, C: TlsSession> AsRawFd for StreamRefMutRaw<'_, S, C> {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug)]
 /// An error indicating that the inner socket cannot be accessed directly.
 pub enum AccessRawStreamError {

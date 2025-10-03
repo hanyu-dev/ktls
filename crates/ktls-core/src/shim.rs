@@ -96,7 +96,7 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::server::ServerConne
 #[cfg(feature = "shim-rustls")]
 impl From<rustls::ProtocolVersion> for ProtocolVersion {
     fn from(value: rustls::ProtocolVersion) -> Self {
-        ProtocolVersion::from_int(value.into())
+        Self::from_int(value.into())
     }
 }
 
@@ -107,7 +107,7 @@ impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
     fn try_from(value: rustls::ConnectionTrafficSecrets) -> Result<Self, Self::Error> {
         match value {
             rustls::ConnectionTrafficSecrets::Aes128Gcm { key, iv } => {
-                Ok(ConnectionTrafficSecrets::Aes128Gcm {
+                Ok(Self::Aes128Gcm {
                     key: AeadKey::new(
                         key.as_ref()
                             .try_into()
@@ -122,7 +122,7 @@ impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
                 })
             }
             rustls::ConnectionTrafficSecrets::Aes256Gcm { key, iv } => {
-                Ok(ConnectionTrafficSecrets::Aes256Gcm {
+                Ok(Self::Aes256Gcm {
                     key: AeadKey::new(
                         key.as_ref()
                             .try_into()
@@ -137,7 +137,7 @@ impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
                 })
             }
             rustls::ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv } => {
-                Ok(ConnectionTrafficSecrets::Chacha20Poly1305 {
+                Ok(Self::Chacha20Poly1305 {
                     key: AeadKey::new(
                         key.as_ref()
                             .try_into()

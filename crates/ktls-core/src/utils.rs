@@ -38,6 +38,7 @@ impl From<Vec<u8>> for Buffer {
 impl Buffer {
     #[inline]
     /// Creates a new [`Buffer`] from the given bytes slice.
+    #[must_use] 
     pub fn new(buffer: Vec<u8>) -> Self {
         Self {
             inner: buffer,
@@ -47,6 +48,7 @@ impl Buffer {
     }
 
     /// Creates an empty [`Buffer`].
+    #[must_use] 
     pub const fn empty() -> Self {
         Self {
             inner: Vec::new(),
@@ -68,7 +70,7 @@ impl Buffer {
     where
         F: FnOnce(&[u8]) -> usize,
     {
-        if self.inner.len() == 0 {
+        if self.inner.is_empty() {
             // Empty buffer, nothing to read.
 
             return None;
@@ -88,7 +90,7 @@ impl Buffer {
             self.reset();
 
             return None;
-        };
+        }
 
         let has_read = NonZeroUsize::new(f(unread));
 
@@ -110,6 +112,7 @@ impl Buffer {
     }
 
     #[inline]
+    #[must_use] 
     /// Returns the unread part of the buffer as a byte slice.
     pub fn unread(&self) -> &[u8] {
         &self.inner[self.offset..]
@@ -193,7 +196,7 @@ impl Buffer {
         #[allow(unsafe_code)]
         // SAFETY: We have ensured that the unfilled part is initialized, and the length is valid.
         unsafe {
-            self.inner.set_len(initialized)
+            self.inner.set_len(initialized);
         };
     }
 

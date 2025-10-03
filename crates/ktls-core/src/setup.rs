@@ -52,8 +52,8 @@ pub fn setup_ulp<S: AsFd>(socket: &S) -> Result<()> {
 /// * Syscall error.
 pub fn setup_tls_params<S: AsFd>(
     socket: &S,
-    tx: TlsCryptoInfoTx,
-    rx: TlsCryptoInfoRx,
+    tx: &TlsCryptoInfoTx,
+    rx: &TlsCryptoInfoRx,
 ) -> Result<()> {
     tx.set(socket)?;
     rx.set(socket)?;
@@ -83,9 +83,11 @@ pub type TlsCryptoInfoTx = TlsCryptoInfo<Tx>;
 /// Type alias of [`TlsCryptoInfo`], for receive direction.
 pub type TlsCryptoInfoRx = TlsCryptoInfo<Rx>;
 
+#[non_exhaustive]
 /// Marker type for the "tx" (transmit) direction.
 pub struct Tx;
 
+#[non_exhaustive]
 /// Marker type for the "rx" (receive) direction.
 pub struct Rx;
 
@@ -93,6 +95,10 @@ impl<D> TlsCryptoInfo<D> {
     #[inline]
     /// Creates a new [`TlsCryptoInfo`] from the given protocol version and
     /// connection traffic secrets.
+    ///
+    /// # Errors
+    ///
+    /// Invalid protocol version (only TLS 1.2 and TLS 1.3 are supported).
     pub fn new(
         protocol_version: ProtocolVersion,
         secrets: ConnectionTrafficSecrets,
@@ -111,6 +117,10 @@ impl TlsCryptoInfoTx {
     ///
     /// This is a low-level function, usually you don't need to call it
     /// directly.
+    ///
+    /// # Errors
+    ///
+    /// Errors may include invalid crypto materials or syscall errors.
     pub fn set<S: AsFd>(&self, socket: &S) -> Result<()> {
         self.inner
             .set(socket, libc::TLS_TX)
@@ -124,6 +134,10 @@ impl TlsCryptoInfoRx {
     ///
     /// This is a low-level function, usually you don't need to call it
     /// directly.
+    ///
+    /// # Errors
+    ///
+    /// Errors may include invalid crypto materials or syscall errors.
     pub fn set<S: AsFd>(&self, socket: &S) -> Result<()> {
         self.inner
             .set(socket, libc::TLS_RX)
@@ -203,6 +217,8 @@ impl TlsCryptoInfoImpl {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::needless_pass_by_value)]
     /// Extract the [`TlsCryptoInfo`] from the given
     /// [`ProtocolVersion`] and [`ConnectionTrafficSecrets`].
     fn new(
@@ -337,6 +353,7 @@ impl TlsCryptoInfoImpl {
 
 impl Drop for TlsCryptoInfoImpl {
     fn drop(&mut self) {
+        #[allow(clippy::match_same_arms)]
         match self {
             Self::AesGcm128(libc::tls12_crypto_info_aes_gcm_128 { key, .. }) => {
                 key.zeroize();

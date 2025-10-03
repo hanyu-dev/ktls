@@ -1,4 +1,6 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::missing_errors_doc)]
 
 use std::future::pending;
 use std::io;
@@ -206,6 +208,7 @@ pub fn cached_connector() -> common::Connector {
 pub static SERVER_NAME: LazyLock<ServerName<'static>> =
     LazyLock::new(|| ServerName::try_from("localhost").expect("invalid DNS name"));
 
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(err)]
 /// Test: echo (async)
 pub async fn test_echo_async(
@@ -329,7 +332,7 @@ pub async fn test_echo_async(
             {
                 tracing::info!("Terminating server...");
 
-                let _ = server_handle.abort();
+                server_handle.abort();
 
                 while !server_handle.is_finished() {
                     tracing::info!("Terminating server...");
@@ -392,7 +395,7 @@ pub async fn test_echo_async(
 
             // Wait for the server to terminate
             {
-                let _ = server_handle
+                server_handle
                     .await
                     .context("Wait for server termination error")?;
             }
@@ -415,6 +418,7 @@ pub fn test_data() -> &'static [u8] {
     })
 }
 
+#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Termination behaviour of the connection.
 pub enum Termination {
@@ -536,9 +540,9 @@ pub async fn tls_server_accepted_loop<S, Data>(
                     }
                 }
             }
-            _ = async {
+            () = async {
                 if let Some(send_back_data_notify) = send_back_data_notify.as_mut() {
-                    let _ = send_back_data_notify.notified().await;
+                    send_back_data_notify.notified().await;
                 } else {
                     pending::<()>().await;
                 }

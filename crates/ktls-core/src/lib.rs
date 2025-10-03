@@ -1,4 +1,6 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::used_underscore_binding)]
 
 pub mod context;
 pub mod error;

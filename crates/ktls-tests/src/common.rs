@@ -290,6 +290,7 @@ impl Connector {
     }
 }
 
+#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, Clone, Copy)]
 /// A no-op certificate verifier that does not perform any verification.
 pub struct NoopVerifier;
@@ -347,6 +348,8 @@ impl ServerCertVerifier for NoopVerifier {
     }
 }
 
+const RECORD_HDR_SIZE: usize = 5;
+
 /// Read a single TLS record from the socket into the incoming buffer.
 pub(crate) async fn read_record<S>(socket: &mut S, incoming: &mut Vec<u8>) -> io::Result<usize>
 where
@@ -355,8 +358,6 @@ where
     let mut socket = Pin::new(socket);
 
     // Read the record header
-
-    const RECORD_HDR_SIZE: usize = 5;
 
     incoming.reserve(RECORD_HDR_SIZE);
 
@@ -385,16 +386,14 @@ where
         &mut incoming.spare_capacity_mut()[RECORD_HDR_SIZE..RECORD_HDR_SIZE + payload_length],
     );
 
-    {
-        while payload.remaining() > 0 {
-            poll_fn(|cx| {
-                socket
-                    .as_mut()
-                    .poll_read(cx, &mut payload)
-            })
-            .await?;
-        }
-    };
+    while payload.remaining() > 0 {
+        poll_fn(|cx| {
+            socket
+                .as_mut()
+                .poll_read(cx, &mut payload)
+        })
+        .await?;
+    }
 
     let bytes_read = RECORD_HDR_SIZE + payload_length;
 

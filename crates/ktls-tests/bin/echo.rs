@@ -72,7 +72,7 @@ fn termination_parser(s: &str) -> Result<Termination, String> {
     match s.to_lowercase().as_str() {
         "client" => Ok(Termination::Client),
         "server" => Ok(Termination::Server),
-        _ => Err(format!("Invalid termination: {}", s)),
+        _ => Err(format!("Invalid termination: {s}")),
     }
 }
 
@@ -120,6 +120,6 @@ fn cipher_parser(s: &str) -> Result<CipherSuite, String> {
         {
             Ok(CipherSuite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256)
         }
-        _ => Err(format!("Invalid cipher: {}", s)),
+        _ => Err(format!("Invalid cipher: {s}")),
     }
 }

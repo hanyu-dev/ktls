@@ -7,7 +7,7 @@ use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 ///
 /// The kernel only handles TLS encryption and decryption, while the TLS
 /// implementation should provide the necessary TLS session context management,
-/// including key updates and handling of NewSessionTicket messages.
+/// including key updates and handling of `NewSessionTicket` messages.
 pub trait TlsSession {
     /// Retrieves which peer this session represents (client or server).
     fn peer(&self) -> Peer;
@@ -21,6 +21,10 @@ pub trait TlsSession {
     ///
     /// This method is called once we send a TLS 1.3 key update message to the
     /// peer.
+    /// 
+    /// # Errors
+    /// 
+    /// Various errors may be returned depending on the implementation.
     fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx>;
 
     /// Update the traffic secret used for decrypting messages received from the
@@ -30,6 +34,10 @@ pub trait TlsSession {
     ///
     /// This method is called once we receive a TLS 1.3 key update message from
     /// the peer.
+    /// 
+    /// # Errors
+    /// 
+    /// Various errors may be returned depending on the implementation.
     fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx>;
 
     /// Handles a `NewSessionTicket` message received from the peer.
@@ -41,6 +49,10 @@ pub trait TlsSession {
     /// should not include the `msg_type` or `length` fields.
     ///
     /// [RFC 8446 section 4]: https://datatracker.ietf.org/doc/html/rfc8446#section-4
+    /// 
+    /// # Errors
+    /// 
+    /// Various errors may be returned depending on the implementation.
     fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()>;
 }
 
@@ -56,6 +68,7 @@ impl<const N: usize> core::fmt::Debug for AeadKey<N> {
 
 impl<const N: usize> AeadKey<N> {
     /// Create a new AEAD key from a byte array.
+    #[must_use]
     pub const fn new(inner: [u8; N]) -> Self {
         Self(inner)
     }
@@ -70,7 +83,7 @@ impl<const N: usize> From<[u8; N]> for AeadKey<N> {
 #[non_exhaustive]
 /// Secrets used to encrypt/decrypt data in a TLS session.
 pub enum ConnectionTrafficSecrets {
-    /// Secrets for the AES_128_GCM AEAD algorithm
+    /// Secrets for the `AES_128_GCM` AEAD algorithm
     Aes128Gcm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_AES_GCM_128_KEY_SIZE }>,
@@ -82,7 +95,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_AES_GCM_128_SALT_SIZE],
     },
 
-    /// Secrets for the AES_256_GCM AEAD algorithm
+    /// Secrets for the `AES_256_GCM` AEAD algorithm
     Aes256Gcm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_AES_GCM_256_KEY_SIZE }>,
@@ -94,7 +107,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_AES_GCM_256_SALT_SIZE],
     },
 
-    /// Secrets for the CHACHA20_POLY1305 AEAD algorithm
+    /// Secrets for the `CHACHA20_POLY1305` AEAD algorithm
     Chacha20Poly1305 {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_CHACHA20_POLY1305_KEY_SIZE }>,
@@ -106,7 +119,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_CHACHA20_POLY1305_SALT_SIZE],
     },
 
-    /// Secrets for the AES_128_CCM AEAD algorithm
+    /// Secrets for the `AES_128_CCM` AEAD algorithm
     Aes128Ccm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_AES_CCM_128_KEY_SIZE }>,
@@ -118,7 +131,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_AES_CCM_128_SALT_SIZE],
     },
 
-    /// Secrets for the SM4_GCM AEAD algorithm
+    /// Secrets for the `SM4_GCM` AEAD algorithm
     Sm4Gcm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_SM4_GCM_KEY_SIZE }>,
@@ -130,7 +143,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_SM4_GCM_SALT_SIZE],
     },
 
-    /// Secrets for the SM4_CCM AEAD algorithm
+    /// Secrets for the `SM4_CCM` AEAD algorithm
     Sm4Ccm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_SM4_CCM_KEY_SIZE }>,
@@ -142,7 +155,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_SM4_CCM_SALT_SIZE],
     },
 
-    /// Secrets for the ARIA_GCM_128 AEAD algorithm
+    /// Secrets for the `ARIA_GCM_128` AEAD algorithm
     Aria128Gcm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_ARIA_GCM_128_KEY_SIZE }>,
@@ -154,7 +167,7 @@ pub enum ConnectionTrafficSecrets {
         salt: [u8; libc::TLS_CIPHER_ARIA_GCM_128_SALT_SIZE],
     },
 
-    /// Secrets for the ARIA_GCM_256 AEAD algorithm
+    /// Secrets for the `ARIA_GCM_256` AEAD algorithm
     Aria256Gcm {
         /// AEAD Key
         key: AeadKey<{ libc::TLS_CIPHER_ARIA_GCM_256_KEY_SIZE }>,
@@ -396,6 +409,7 @@ enum_builder! {
     }
 }
 
+#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// The peer in a TLS connection: client or server.
 pub enum Peer {
