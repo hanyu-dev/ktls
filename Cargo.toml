@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ktls-core", "crates/ktls-stream"]
+members = ["crates/ktls-core", "crates/ktls-stream", "crates/ktls-tests"]
 default-members = ["crates/ktls-core"]
 resolver = "2"
 
