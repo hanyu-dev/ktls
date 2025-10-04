@@ -166,6 +166,11 @@ pub fn recv_tls_record(socket: RawFd, buffer: &mut Buffer) -> io::Result<Content
         ));
     };
 
+    // SAFETY: msghdr and cmsghdr point to valid data returned by recvmsg(2)
+    unsafe {
+        debug_assert!(libc::CMSG_NXTHDR(&raw const msghdr, cmsghdr).is_null());
+    }
+
     // SAFETY: we just wrote valid `ret` bytes into the buffer.
     unsafe { buffer.assume_init_additional(ret as usize) };
 
