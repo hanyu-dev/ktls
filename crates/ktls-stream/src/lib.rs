@@ -464,10 +464,10 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
             .state()
             .is_write_closed()
         {
-            crate::trace!("Write closed, returning EOF");
+            crate::trace!("Write closed, returning WriteZero");
 
             return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
+                io::ErrorKind::WriteZero,
                 "TLS stream (write side) is closed",
             ));
         }
