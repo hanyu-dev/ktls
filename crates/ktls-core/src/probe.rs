@@ -132,7 +132,7 @@ pub struct Compatibility {
 impl Compatibility {
     /// Returns whether no cipher suites are supported (the corresponding TLS
     /// version is unsupported).
-    #[must_use] 
+    #[must_use]
     pub const fn is_unsupported(&self) -> bool {
         self.0 == 0
     }

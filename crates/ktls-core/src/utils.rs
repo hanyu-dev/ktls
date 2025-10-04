@@ -37,7 +37,7 @@ impl From<Vec<u8>> for Buffer {
 
 impl Buffer {
     #[inline]
-    #[must_use] 
+    #[must_use]
     /// Creates a new [`Buffer`] from the given bytes slice.
     pub fn new(buffer: Vec<u8>) -> Self {
         Self {
@@ -47,7 +47,7 @@ impl Buffer {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     /// Creates an empty [`Buffer`].
     pub const fn empty() -> Self {
         Self {
@@ -112,7 +112,7 @@ impl Buffer {
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     /// Returns the unread part of the buffer as a byte slice.
     pub fn unread(&self) -> &[u8] {
         &self.inner[self.offset..]

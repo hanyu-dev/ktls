@@ -21,9 +21,9 @@ pub trait TlsSession {
     ///
     /// This method is called once we send a TLS 1.3 key update message to the
     /// peer.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Various errors may be returned depending on the implementation.
     fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx>;
 
@@ -34,9 +34,9 @@ pub trait TlsSession {
     ///
     /// This method is called once we receive a TLS 1.3 key update message from
     /// the peer.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Various errors may be returned depending on the implementation.
     fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx>;
 
@@ -49,9 +49,9 @@ pub trait TlsSession {
     /// should not include the `msg_type` or `length` fields.
     ///
     /// [RFC 8446 section 4]: https://datatracker.ietf.org/doc/html/rfc8446#section-4
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Various errors may be returned depending on the implementation.
     fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()>;
 }

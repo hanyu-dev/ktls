@@ -106,36 +106,32 @@ impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
 
     fn try_from(value: rustls::ConnectionTrafficSecrets) -> Result<Self, Self::Error> {
         match value {
-            rustls::ConnectionTrafficSecrets::Aes128Gcm { key, iv } => {
-                Ok(Self::Aes128Gcm {
-                    key: AeadKey::new(
-                        key.as_ref()
-                            .try_into()
-                            .expect("key length mismatch"),
-                    ),
-                    iv: iv.as_ref()[4..]
+            rustls::ConnectionTrafficSecrets::Aes128Gcm { key, iv } => Ok(Self::Aes128Gcm {
+                key: AeadKey::new(
+                    key.as_ref()
                         .try_into()
-                        .expect("iv length mismatch"),
-                    salt: iv.as_ref()[..4]
+                        .expect("key length mismatch"),
+                ),
+                iv: iv.as_ref()[4..]
+                    .try_into()
+                    .expect("iv length mismatch"),
+                salt: iv.as_ref()[..4]
+                    .try_into()
+                    .expect("salt length mismatch"),
+            }),
+            rustls::ConnectionTrafficSecrets::Aes256Gcm { key, iv } => Ok(Self::Aes256Gcm {
+                key: AeadKey::new(
+                    key.as_ref()
                         .try_into()
-                        .expect("salt length mismatch"),
-                })
-            }
-            rustls::ConnectionTrafficSecrets::Aes256Gcm { key, iv } => {
-                Ok(Self::Aes256Gcm {
-                    key: AeadKey::new(
-                        key.as_ref()
-                            .try_into()
-                            .expect("key length mismatch"),
-                    ),
-                    iv: iv.as_ref()[4..]
-                        .try_into()
-                        .expect("iv length mismatch"),
-                    salt: iv.as_ref()[..4]
-                        .try_into()
-                        .expect("salt length mismatch"),
-                })
-            }
+                        .expect("key length mismatch"),
+                ),
+                iv: iv.as_ref()[4..]
+                    .try_into()
+                    .expect("iv length mismatch"),
+                salt: iv.as_ref()[..4]
+                    .try_into()
+                    .expect("salt length mismatch"),
+            }),
             rustls::ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv } => {
                 Ok(Self::Chacha20Poly1305 {
                     key: AeadKey::new(
