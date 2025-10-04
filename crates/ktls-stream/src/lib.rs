@@ -209,12 +209,6 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         handle_ret!(self, {
-            if self.context.state().is_read_closed() {
-                crate::trace!("Read closed, returning EOF");
-
-                return Ok(0);
-            }
-
             let read_from_buffer = self.context.buffer_mut().read(|data| {
                 crate::trace!("Read from buffer: remaining {} bytes", data.len());
 
@@ -225,6 +219,12 @@ where
 
             if let Some(read_from_buffer) = read_from_buffer {
                 return Ok(read_from_buffer.get());
+            }
+
+            if self.context.state().is_read_closed() {
+                crate::trace!("Read closed, returning EOF");
+
+                return Ok(0);
             }
 
             // Retry is OK, the implementation of `Read` requires no data will be
@@ -320,19 +320,21 @@ where
         let mut this = self.project();
 
         handle_ret_async!(this, {
+            let read_from_buffer = this.context.buffer_mut().read(|data| {
+                let amt = buf.remaining().min(data.len());
+                buf.put_slice(&data[..amt]);
+                amt
+            });
+
+            if read_from_buffer.is_some() {
+                return task::Poll::Ready(Ok(()));
+            }
+
             if this.context.state().is_read_closed() {
                 crate::trace!("Read closed, returning EOF");
 
                 return task::Poll::Ready(Ok(()));
             }
-
-            this.context.buffer_mut().read(|data| {
-                crate::trace!("Read from buffer: remaining {} bytes", data.len());
-
-                let amt = buf.remaining().min(data.len());
-                buf.put_slice(&data[..amt]);
-                amt
-            });
 
             // Retry is OK, the implementation of `poll_read` requires no data will be
             // read into the buffer when error occurs.
