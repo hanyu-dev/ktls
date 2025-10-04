@@ -1,29 +1,25 @@
 //! Example: TLS server using `ktls`.
 
-use tokio::net::TcpListener;
+use anyhow::Result;
+use ktls_tests::{acceptor_full, init_logger, EchoServer};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("TRACE"))
-        .pretty()
-        .try_init();
-
-    let listener = TcpListener::bind("0.0.0.0:8443")
-        .await
-        .expect("Bind error");
-
-    let acceptor = ktls_tests::acceptor();
+async fn main() -> Result<()> {
+    init_logger();
 
     tokio::select! {
         biased;
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Received Ctrl + C...");
-        }
-        () = ktls_tests::echo_server_loop(
-            listener, acceptor, ktls_tests::Termination::Client, None
-        ) => {}
-    }
 
-    Ok(())
+            Ok(())
+        }
+        ret = async {
+            let echo_server = EchoServer::new(acceptor_full()).await?;
+
+            echo_server.accept_loop().await
+        } => {
+            ret
+        }
+    }
 }

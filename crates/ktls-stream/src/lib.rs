@@ -334,7 +334,15 @@ where
         handle_ret_async!(this, {
             let read_from_buffer = this.context.buffer_mut().read(|data| {
                 let amt = buf.remaining().min(data.len());
+
+                crate::trace!(
+                    "Read from buffer: remaining {} bytes, will read {} bytes",
+                    data.len(),
+                    amt
+                );
+
                 buf.put_slice(&data[..amt]);
+
                 amt
             });
 

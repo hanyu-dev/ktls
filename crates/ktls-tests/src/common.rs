@@ -28,6 +28,9 @@ where
 {
     inner: Stream<S, KernelConnection<Data>>,
 
+    /// The negotiated protocol version.
+    pub protocol_version: rustls::ProtocolVersion,
+
     /// The handshake type used in the connection, if applicable.
     pub handshake_kind: Option<HandshakeKind>,
 }
@@ -158,7 +161,10 @@ impl Acceptor {
             incoming.drain(..discard);
         }
 
-        let handshake_type = conn.handshake_kind();
+        let protocol_version = conn
+            .protocol_version()
+            .expect("Handshake should have been done");
+        let handshake_kind = conn.handshake_kind();
 
         let (secrets, session) = conn
             .dangerous_into_kernel_connection()
@@ -172,7 +178,8 @@ impl Acceptor {
                 Some(Buffer::new(early_data_received)),
             )
             .map_err(Error::Ktls)?,
-            handshake_kind: handshake_type,
+            protocol_version,
+            handshake_kind,
         })
     }
 }
@@ -190,6 +197,7 @@ impl Connector {
         Self { config }
     }
 
+    #[tracing::instrument(skip_all)]
     /// Connects to a TLS server using the given socket and server name.
     ///
     /// ## Errors
@@ -277,6 +285,9 @@ impl Connector {
             incoming.drain(..discard);
         }
 
+        let protocol_version = conn
+            .protocol_version()
+            .expect("Handshake should have been done");
         let handshake_kind = conn.handshake_kind();
 
         let (secrets, session) = conn
@@ -285,6 +296,7 @@ impl Connector {
 
         Ok(StreamExt {
             inner: Stream::from(socket, secrets, session, None).map_err(Error::Ktls)?,
+            protocol_version,
             handshake_kind,
         })
     }

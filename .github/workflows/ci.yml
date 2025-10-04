@@ -11,7 +11,7 @@ permissions:
 
 env:
   RUSTFLAGS: -Dwarnings
-  RUST_BACKTRACE: 1
+  RUST_BACKTRACE: full
 
 jobs:
   test:
@@ -73,7 +73,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - run: just clippy
+      - run: just clippy --all
 
   coverage:
     name: Coverage

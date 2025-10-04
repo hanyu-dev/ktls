@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use ktls_tests::{test_echo_async, Termination};
+use ktls_tests::{init_logger, test_echo_async, Termination};
 use rustls::CipherSuite;
 use tokio::time::timeout;
 
@@ -23,10 +23,7 @@ use tokio::time::timeout;
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_echo(termination: Termination, cipher: Option<CipherSuite>) {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("TRACE"))
-        .pretty()
-        .try_init();
+    init_logger();
 
     timeout(
         Duration::from_secs(15),
@@ -35,4 +32,6 @@ async fn test_echo(termination: Termination, cipher: Option<CipherSuite>) {
     .await
     .expect("test_echo_async timeout")
     .expect("test_echo_async failed");
+
+    tracing::info!("test_echo_async completed successfully");
 }

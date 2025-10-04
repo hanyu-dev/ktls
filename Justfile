@@ -6,7 +6,7 @@ _default:
 # Run all tests with nextest and cargo-llvm-cov
 ci-test *args:
 	#!/bin/bash -eux
-	cargo llvm-cov nextest --package ktls-tests {{args}} --locked --ignore-filename-regex "ktls-tests" --lcov --output-path coverage.lcov
+	cargo llvm-cov nextest --package ktls-core --package ktls-tests {{args}} --locked --ignore-filename-regex "ktls-tests" --lcov --output-path coverage.lcov
 
 # =========== LOCAL COMMANDS ===========
 
@@ -19,7 +19,7 @@ b *args:
 # Show coverage locally
 cov *args:
 	#!/bin/bash -eux
-	cargo llvm-cov nextest --package ktls-tests {{args}} --locked --ignore-filename-regex "ktls-tests" --hide-instantiations --html --output-dir coverage
+	cargo llvm-cov nextest --package ktls-core --package ktls-tests {{args}} --locked --ignore-filename-regex "ktls-tests" --hide-instantiations --html --output-dir coverage
 
 check *args:
     cargo check {{args}} --locked --all-features

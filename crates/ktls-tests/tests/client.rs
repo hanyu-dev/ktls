@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use ktls_core::TlsSession;
 use ktls_stream::Stream;
-use ktls_tests::cached_connector;
+use ktls_tests::{cached_connector, init_logger};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{sleep, timeout};
@@ -39,10 +39,7 @@ async fn test_connecct_sites(server_name: &'static str) -> Result<()> {
 }
 
 async fn test_connecct_sites_impl(server_name: &'static str) -> Result<()> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("TRACE"))
-        .pretty()
-        .try_init();
+    init_logger();
 
     let Ok(Ok(socket)) = timeout(
         Duration::from_secs(1),
@@ -83,8 +80,9 @@ where
         ktls_stream
             .write_all(
                 format!(
-                    "GET / HTTP/1.1\r\nHost: {server_name}\r\nconnection: keep-alive\r\naccept-encoding: \
-                     identity\r\ntransfer-encoding: identity\r\n\r\n"
+                    "GET / HTTP/1.1\r\nHost: {server_name}\r\nconnection: \
+                     keep-alive\r\naccept-encoding: identity\r\ntransfer-encoding: \
+                     identity\r\n\r\n"
                 )
                 .as_bytes(),
             )
@@ -120,7 +118,8 @@ where
             const PREFIX: &[u8; 16] = b"content-length: ";
 
             if has_read_bytes
-                .get(..PREFIX.len()).is_some_and(|v| v.eq_ignore_ascii_case(PREFIX))
+                .get(..PREFIX.len())
+                .is_some_and(|v| v.eq_ignore_ascii_case(PREFIX))
             {
                 let v = std::str::from_utf8(&has_read_bytes[PREFIX.len()..])
                     .expect("content length should be a number string")

@@ -3,16 +3,13 @@
 use std::time::Duration;
 
 use clap::Parser;
-use ktls_tests::{test_echo_async, Termination};
+use ktls_tests::{init_logger, test_echo_async, Termination};
 use rustls::CipherSuite;
 use tokio::time::timeout;
 
 #[tokio::main]
 async fn main() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("TRACE"))
-        .pretty()
-        .try_init();
+    init_logger();
 
     tracing::info!("Starting test");
 
@@ -46,13 +43,16 @@ async fn main() {
                 cipher
             );
 
+            // Test: kTLS offloaded client <-> kTLS offloaded server
             timeout(
-                Duration::from_secs(30),
+                Duration::from_secs(15),
                 test_echo_async(termination, cipher),
             )
             .await
-            .expect("test_echo_async timeout")
-            .expect("test_echo_async failed");
+            .expect("test_bidi_offloaded_echo_async timeout")
+            .expect("test_bidi_offloaded_echo_async failed");
+
+            tracing::info!("test_echo completed successfully");
         }
     }
 
