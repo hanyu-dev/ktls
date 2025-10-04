@@ -7,23 +7,25 @@
 
 Abstraction for implementing Linux kernel TLS (kTLS) offload in Rust.
 
+## Overview
+
 - [`ktls-core`](./crates/ktls-core/README.md)
 
   [![Crates.io](https://img.shields.io/crates/v/ktls-core)](https://crates.io/crates/ktls-core)
   [![Docs.rs](https://docs.rs/ktls-core/badge.svg)](https://docs.rs/ktls-core)
+
 - [`ktls-stream`](./crates/ktls-stream/README.md)
 
   [![Crates.io](https://img.shields.io/crates/v/ktls-stream)](https://crates.io/crates/ktls-stream)
   [![Docs.rs](https://docs.rs/ktls-stream/badge.svg)](https://docs.rs/ktls-stream)
+
 - [`ktls-tests`](./crates/ktls-tests/README.md): Testing utilities
 
   (not published on crates.io).
 
 ## Information
 
-If you are looking for crates providing kTLS support on top of [`rustls`](https://crates.io/crates/rustls), please check out crate [`ktls`](https://crates.io/crates/ktls).
-
-This repository does not serve as a replacement of `ktls` but rather provides a more generic interface for implementing kTLS offload with any TLS library.
+This repository does not serve as a drop-in replacement of crate [`ktls`](https://crates.io/crates/ktls) but rather provides a more generic interface for implementing kTLS offload with any TLS library.
 
 ## License
 
