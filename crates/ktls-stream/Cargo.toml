@@ -1,6 +1,6 @@
 [package]
 name = "ktls-stream"
-version = "0.0.1"
+version = "0.0.2"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -18,7 +18,7 @@ features = ["shim-rustls"]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-ktls-core = { version = "=0.0.1", path = "../ktls-core" }
+ktls-core = { version = "=0.0.2", path = "../ktls-core" }
 log = { workspace = true, optional = true }
 pin-project-lite = { workspace = true }
 rustls = { workspace = true, default-features = false, optional = true }
