@@ -434,7 +434,7 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
     ///   See also [`Context::handle_io_error`].
     pub fn try_read_io<F, R>(&mut self, mut f: F) -> io::Result<R>
     where
-        F: FnMut(&mut S) -> io::Result<R>,
+        F: FnMut(&mut S, &mut Context<C>) -> io::Result<R>,
     {
         if self
             .this
@@ -450,7 +450,7 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
             ));
         }
 
-        handle_ret!(self.this, f(&mut self.this.inner));
+        handle_ret!(self.this, f(&mut self.this.inner, &mut self.this.context));
     }
 
     /// Performs write operation on the inner socket, handles possible errors
@@ -470,7 +470,7 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
     ///   See also [`Context::handle_io_error`].
     pub fn try_write_io<F, R>(&mut self, mut f: F) -> io::Result<R>
     where
-        F: FnMut(&mut S) -> io::Result<R>,
+        F: FnMut(&mut S, &mut Context<C>) -> io::Result<R>,
     {
         if self
             .this
@@ -486,7 +486,7 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
             ));
         }
 
-        handle_ret!(self.this, f(&mut self.this.inner));
+        handle_ret!(self.this, f(&mut self.this.inner, &mut self.this.context));
     }
 
     #[inline]
