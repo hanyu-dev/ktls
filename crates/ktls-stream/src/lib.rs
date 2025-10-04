@@ -101,17 +101,17 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     ///     [`StreamRefMutRaw::handle_io_error`].
     ///
     /// * The caller **MAY** handle any [`io::Result`]s returned by I/O
-    ///   operations on the inner socket with
+    ///   operations directly on the inner socket with
     ///   [`StreamRefMutRaw::handle_io_error`].
     ///
     /// * The caller **MUST NOT** shutdown the inner socket directly, which will
-    ///   lead to undefined behaviours. Instead, the caller **MAY** call
-    ///   `(poll_)shutdown` explictly on the [`Stream`] to gracefully shutdown
-    ///   the TLS stream (with `close_notify` be sent) manually, or just drop
-    ///   the stream to do automatic graceful shutdown.
-    /// 
+    ///   lead to undefined behaviours. Instead, the caller **MAY**
+    ///   `(poll_)shutdown` explictly the [`Stream`] to gracefully shutdown the
+    ///   TLS stream (with `close_notify` be sent), or just drop the stream to
+    ///   do automatic graceful shutdown.
+    ///
     /// # Errors
-    /// 
+    ///
     /// See [`AccessRawStreamError`].
     pub fn as_mut_raw(&mut self) -> Result<StreamRefMutRaw<'_, S, C>, AccessRawStreamError> {
         if let Some(buffer) = self.context.buffer_mut().drain() {
@@ -210,10 +210,14 @@ where
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         handle_ret!(self, {
             if self.context.state().is_read_closed() {
+                crate::trace!("Read closed, returning EOF");
+
                 return Ok(0);
             }
 
             let read_from_buffer = self.context.buffer_mut().read(|data| {
+                crate::trace!("Read from buffer: remaining {} bytes", data.len());
+
                 let amt = buf.len().min(data.len());
                 buf[..amt].copy_from_slice(&data[..amt]);
                 amt
@@ -263,7 +267,8 @@ where
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         handle_ret!(self, {
             if self.context.state().is_write_closed() {
-                // Write side is closed, return EOF.
+                crate::trace!("Write closed, returning EOF");
+
                 return Ok(0);
             }
 
@@ -276,7 +281,8 @@ where
     fn flush(&mut self) -> io::Result<()> {
         handle_ret!(self, {
             if self.context.state().is_write_closed() {
-                // Write side is closed, return directly.
+                crate::trace!("Write closed, skipping flush");
+
                 return Ok(());
             }
 
@@ -315,15 +321,21 @@ where
 
         handle_ret_async!(this, {
             if this.context.state().is_read_closed() {
+                crate::trace!("Read closed, returning EOF");
+
                 return task::Poll::Ready(Ok(()));
             }
 
             this.context.buffer_mut().read(|data| {
+                crate::trace!("Read from buffer: remaining {} bytes", data.len());
+
                 let amt = buf.remaining().min(data.len());
                 buf.put_slice(&data[..amt]);
                 amt
             });
 
+            // Retry is OK, the implementation of `poll_read` requires no data will be
+            // read into the buffer when error occurs.
             this.inner.as_mut().poll_read(cx, buf)
         })
     }
@@ -393,7 +405,8 @@ pub struct StreamRefMutRaw<'a, S: AsFd, C: TlsSession> {
 
 impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
     /// Performs an I/O operation on the inner socket, handling possible errors
-    /// with [`Context::handle_io_error`].
+    /// with [`Context::handle_io_error`] and retrying the operation if the
+    /// error is recoverable (see [`Context::handle_io_error`] for details).
     ///
     /// # Errors
     ///
@@ -405,11 +418,16 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
         handle_ret!(self.this, f(&mut self.this.inner));
     }
 
-    /// See [`Context::handle_io_error`].
+    #[inline]
+    /// Since [`StreamRefMutRaw`] provides direct access to the inner socket,
+    /// the caller **MUST** handle any possible I/O errors returned by I/O
+    /// operations on the inner socket with this method.
+    ///
+    /// See also [`Context::handle_io_error`].
     ///
     /// # Errors
     ///
-    /// Returns the original I/O error that is unrecoverable.
+    /// See [`Context::handle_io_error`].
     pub fn handle_io_error(&mut self, err: io::Error) -> io::Result<()> {
         self.this
             .context
@@ -418,12 +436,14 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
 }
 
 impl<S: AsFd, C: TlsSession> AsFd for StreamRefMutRaw<'_, S, C> {
+    #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.this.inner.as_fd()
     }
 }
 
 impl<S: AsFd, C: TlsSession> AsRawFd for StreamRefMutRaw<'_, S, C> {
+    #[inline]
     fn as_raw_fd(&self) -> RawFd {
         self.this.inner.as_fd().as_raw_fd()
     }
@@ -437,5 +457,11 @@ pub enum AccessRawStreamError {
     Closed,
 
     /// There's still buffered data that has not been retrieved yet.
+    ///
+    /// The buffered data typically consists of:
+    ///
+    /// - Early data received during handshake.
+    /// - Application data received due to improper usage of
+    ///   [`StreamRefMutRaw::handle_io_error`].
     HasBufferedData(Vec<u8>),
 }

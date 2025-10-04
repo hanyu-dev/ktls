@@ -38,16 +38,19 @@ impl<C: TlsSession> Context<C> {
         }
     }
 
+    #[inline]
     /// Returns the current kTLS connection state.
     pub const fn state(&self) -> &State {
         &self.state
     }
 
+    #[inline]
     /// Returns a reference to the buffer.
     pub const fn buffer(&self) -> &Buffer {
         &self.buffer
     }
 
+    #[inline]
     /// Returns a mutable reference to the buffer.
     pub const fn buffer_mut(&mut self) -> &mut Buffer {
         &mut self.buffer
@@ -475,9 +478,10 @@ pub struct State {
 }
 
 impl State {
+    #[inline]
+    #[must_use]
     /// Returns whether the connection is fully closed (both read and write
     /// sides).
-    #[must_use]
     pub const fn is_closed(&self) -> bool {
         self.is_read_closed() && self.is_write_closed()
     }
@@ -488,6 +492,7 @@ struct HandshakeMessagesIter<'a> {
 }
 
 impl<'a> HandshakeMessagesIter<'a> {
+    #[inline]
     const fn new(payloads: &'a [u8]) -> Self {
         Self {
             inner: Ok(Some(payloads)),
@@ -498,6 +503,7 @@ impl<'a> HandshakeMessagesIter<'a> {
 impl<'a> Iterator for HandshakeMessagesIter<'a> {
     type Item = Result<(HandshakeType, &'a [u8]), ()>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner {
             Ok(None) => None,

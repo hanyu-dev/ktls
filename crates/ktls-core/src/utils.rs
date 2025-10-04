@@ -37,8 +37,8 @@ impl From<Vec<u8>> for Buffer {
 
 impl Buffer {
     #[inline]
-    /// Creates a new [`Buffer`] from the given bytes slice.
     #[must_use] 
+    /// Creates a new [`Buffer`] from the given bytes slice.
     pub fn new(buffer: Vec<u8>) -> Self {
         Self {
             inner: buffer,
@@ -47,8 +47,8 @@ impl Buffer {
         }
     }
 
-    /// Creates an empty [`Buffer`].
     #[must_use] 
+    /// Creates an empty [`Buffer`].
     pub const fn empty() -> Self {
         Self {
             inner: Vec::new(),
