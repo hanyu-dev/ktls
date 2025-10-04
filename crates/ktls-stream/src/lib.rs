@@ -404,17 +404,74 @@ pub struct StreamRefMutRaw<'a, S: AsFd, C: TlsSession> {
 }
 
 impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
-    /// Performs an I/O operation on the inner socket, handling possible errors
-    /// with [`Context::handle_io_error`] and retrying the operation if the
+    /// Performs read operation on the inner socket, handles possible errors
+    /// with [`Context::handle_io_error`] and retries the operation if the
     /// error is recoverable (see [`Context::handle_io_error`] for details).
+    ///
+    /// # Prerequisites
+    ///
+    /// The caller SHOULD NOT perform any *write* operations in `f`.
     ///
     /// # Errors
     ///
-    /// Returns the original I/O error that is unrecoverable.
-    pub fn try_io<F, R>(&mut self, mut f: F) -> io::Result<R>
+    /// - If the read side of the TLS stream is closed, this will return an EOF.
+    /// - Returns the original I/O error returned by `f` that is unrecoverable.
+    ///
+    ///   See also [`Context::handle_io_error`].
+    pub fn try_read_io<F, R>(&mut self, mut f: F) -> io::Result<R>
     where
         F: FnMut(&mut S) -> io::Result<R>,
     {
+        if self
+            .this
+            .context
+            .state()
+            .is_read_closed()
+        {
+            crate::trace!("Read closed, returning EOF");
+
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "TLS stream (read side) is closed",
+            ));
+        }
+
+        handle_ret!(self.this, f(&mut self.this.inner));
+    }
+
+    /// Performs write operation on the inner socket, handles possible errors
+    /// with [`Context::handle_io_error`] and retries the operation if the
+    /// error is recoverable (see [`Context::handle_io_error`] for details).
+    ///
+    /// # Prerequisites
+    ///
+    /// The caller SHOULD NOT perform any *read* operations in `f`.
+    ///
+    /// # Errors
+    ///
+    /// - If the write side of the TLS stream is closed, this will return an
+    ///   EOF.
+    /// - Returns the original I/O error returned by `f` that is unrecoverable.
+    ///
+    ///   See also [`Context::handle_io_error`].
+    pub fn try_write_io<F, R>(&mut self, mut f: F) -> io::Result<R>
+    where
+        F: FnMut(&mut S) -> io::Result<R>,
+    {
+        if self
+            .this
+            .context
+            .state()
+            .is_write_closed()
+        {
+            crate::trace!("Write closed, returning EOF");
+
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "TLS stream (write side) is closed",
+            ));
+        }
+
         handle_ret!(self.this, f(&mut self.this.inner));
     }
 

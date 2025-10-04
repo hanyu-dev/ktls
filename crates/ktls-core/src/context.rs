@@ -71,6 +71,11 @@ impl<C: TlsSession> Context<C> {
     /// - **`EIO`**: Attempts to process any received TLS control messages.
     ///   Returns `Ok(())` on success, allowing the caller to retry the
     ///   operation.
+    /// - **`Interrupted`**: Indicates the operation was interrupted by a
+    ///   signal. Returns `Ok(())`, allowing the caller to retry the operation.
+    /// - **`WouldBlock`**: Indicates the operation would block (e.g.,
+    ///   non-blocking socket). Returns `Ok(())`, allowing the caller to retry
+    ///   the operation.
     /// - **`BrokenPipe`**: Marks the stream as closed.
     /// - Other errors: Aborts the connection with an `internal_error` alert and
     ///   returns the original error.
@@ -83,6 +88,18 @@ impl<C: TlsSession> Context<C> {
             crate::trace!("Received EIO, handling TLS control message");
 
             self.handle_tls_control_message(socket)?;
+
+            return Ok(());
+        }
+
+        if err.kind() == io::ErrorKind::Interrupted {
+            crate::trace!("The I/O operation was interrupted, retrying...");
+
+            return Ok(());
+        }
+
+        if err.kind() == io::ErrorKind::WouldBlock {
+            crate::trace!("The I/O operation would block, retrying...");
 
             return Ok(());
         }
