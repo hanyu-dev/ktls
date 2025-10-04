@@ -128,19 +128,20 @@ jobs:
     env:
       KERNEL_VERSION: ${{ matrix.kernel-version }}
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            bison flex libelf-dev \
-            xz-utils wget
-
       - name: Cache Linux source
         id: cache-kernel
         uses: actions/cache@v4
         with:
           path: linux-${{ env.KERNEL_VERSION }}
           key: linux-${{ env.KERNEL_VERSION }}-cache-v1
+
+      - name: Install dependencies
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison flex libelf-dev \
+            xz-utils wget
 
       - name: Build Linux kernel
         if: steps.cache-kernel.outputs.cache-hit != 'true'
