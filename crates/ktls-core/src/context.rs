@@ -56,6 +56,89 @@ impl<C: TlsSession> Context<C> {
         &mut self.buffer
     }
 
+    /// Sends a TLS 1.3 `key_update` message to refresh a connection's keys.
+    ///
+    /// This call refreshes our encryption keys. Once the peer receives the
+    /// message, it refreshes _its_ encryption and decryption keys and sends
+    /// a response. Once we receive that response, we refresh our decryption
+    /// keys to match. At the end of this process, keys in both directions
+    /// have been refreshed.
+    ///
+    /// # Notes
+    ///
+    /// Note that TLS implementations may enforce limits on the number of
+    /// `key_update` messages allowed on a given connection to prevent
+    /// denial of service. Therefore, this should be called sparingly.
+    ///
+    /// Since the kernel will never implicitly and automatically trigger key
+    /// updates according to the selected cipher suite's cryptographic
+    /// constraints, the application is responsible for calling this method
+    /// as needed to maintain security.
+    ///
+    /// # Known Issues
+    ///
+    /// Under the condition that both parties are kTLS offloaded and the
+    /// server program uses the Tokio asynchronous runtime, if the server
+    /// initiates a Key Update and then immediately performs a read I/O
+    /// operation, it will cause the program to hang (the read I/O operation
+    /// returns EAGAIN but the task waker does not seem to be registered
+    /// correctly). This issue needs further investigation.
+    ///
+    /// # Errors
+    ///
+    /// - Updateing the TX secret fails.
+    /// - Sending the `KeyUpdate` message fails.
+    /// - Setting the TX secret on the socket fails.
+    pub fn refresh_traffic_keys<S: AsFd>(&mut self, socket: &S) -> Result<()> {
+        crate::trace!("Trigger traffic keys refreshing...");
+
+        if self.session.protocol_version() != ProtocolVersion::TLSv1_3 {
+            crate::warn!(
+                "Key update is only supported for TLS 1.3 connections, current version: {:?}",
+                self.session.protocol_version()
+            );
+
+            return Ok(());
+        }
+
+        let tls_crypto_info_tx = match self.session.update_tx_secret() {
+            Ok(tx) => tx,
+            Err(error) => {
+                // TODO: should we abort the connection here or just keep using the old key?
+
+                return self.abort(socket, error, AlertDescription::InternalError);
+            }
+        };
+
+        if let Err(error) = send_tls_control_message(
+            socket.as_fd().as_raw_fd(),
+            ContentType::Handshake,
+            &mut [
+                HandshakeType::KeyUpdate.to_int(), // typ
+                0,
+                0,
+                1, // length
+                KeyUpdateRequest::UpdateRequested.to_int(),
+            ],
+        )
+        .map_err(Error::KeyUpdateFailed)
+        {
+            // Failed to notify the peer, abort the connection.
+            crate::error!("Failed to send KeyUpdate message: {error}");
+
+            return self.abort(socket, error, AlertDescription::InternalError);
+        }
+
+        if let Err(error) = tls_crypto_info_tx.set(socket) {
+            // Failed to update tx secret, abort the connection.
+            crate::error!("Failed to set TX secret: {error}");
+
+            return self.abort(socket, error, AlertDescription::InternalError);
+        }
+
+        Ok(())
+    }
+
     /// Handles [`io::Error`]s from I/O operations on kTLS-configured sockets.
     ///
     /// # Overview
@@ -280,6 +363,8 @@ impl<C: TlsSession> Context<C> {
                         .update_rx_secret()
                         .and_then(|secret| secret.set(socket))
                     {
+                        crate::error!("Failed to update tx secret: {error}");
+
                         return self.abort(socket, error, AlertDescription::InternalError);
                     }
 

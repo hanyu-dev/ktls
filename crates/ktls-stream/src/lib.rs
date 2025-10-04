@@ -127,6 +127,18 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
 
         Ok(StreamRefMutRaw { this: self })
     }
+
+    /// Sends a TLS 1.3 `key_update` message to refresh a connection's keys.
+    ///
+    /// See [`Context::refresh_traffic_keys`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// See [`Context::refresh_traffic_keys`].
+    pub fn refresh_traffic_keys(&mut self) -> Result<(), ktls_core::Error> {
+        self.context
+            .refresh_traffic_keys(&self.inner)
+    }
 }
 
 #[cfg(feature = "shim-rustls")]
