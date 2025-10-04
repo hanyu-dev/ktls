@@ -80,6 +80,10 @@ impl<C: TlsSession> Context<C> {
     /// - Other errors: Aborts the connection with an `internal_error` alert and
     ///   returns the original error.
     ///
+    /// # Notes
+    ///
+    /// Incorrect usage of this method MAY lead to unexpected behavior.
+    ///
     /// # Errors
     ///
     /// Returns the original [`io::Error`] if it cannot be recovered from.
@@ -201,6 +205,14 @@ impl<C: TlsSession> Context<C> {
                     InvalidMessage::InvalidContentType,
                     InvalidMessage::InvalidContentType.description(),
                 );
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                // No TLS control message available, the caller should retry
+                // the I/O operation.
+
+                crate::trace!("No TLS control message available, retrying...");
+
+                return Ok(());
             }
             Err(error) => {
                 crate::error!("Failed to receive TLS control message: {error}");
