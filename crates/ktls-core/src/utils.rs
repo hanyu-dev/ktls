@@ -198,6 +198,8 @@ impl Buffer {
         unsafe {
             self.inner.set_len(initialized);
         };
+
+        self.unfilled_initialized = 0;
     }
 
     #[inline]
@@ -207,5 +209,313 @@ impl Buffer {
         self.inner.truncate(0);
         self.inner.shrink_to(65536);
         self.offset = 0;
+    }
+}
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_buffer_new() {
+        let data = vec![1, 2, 3, 4, 5];
+        let buffer = Buffer::new(data.clone());
+
+        assert_eq!(buffer.unread(), &data);
+        assert_eq!(buffer.offset, 0);
+        assert_eq!(buffer.unfilled_initialized, 0);
+    }
+
+    #[test]
+    fn test_buffer_empty() {
+        let buffer = Buffer::empty();
+
+        assert!(buffer.unread().is_empty());
+        assert_eq!(buffer.offset, 0);
+        assert_eq!(buffer.unfilled_initialized, 0);
+        assert_eq!(buffer.inner.capacity(), 0);
+    }
+
+    #[test]
+    fn test_buffer_from_vec() {
+        let data = vec![10, 20, 30];
+        let buffer: Buffer = data.clone().into();
+
+        assert_eq!(buffer.unread(), &data);
+        assert_eq!(buffer.offset, 0);
+    }
+
+    #[test]
+    fn test_buffer_read_empty() {
+        let mut buffer = Buffer::empty();
+
+        let result = buffer.read(|data| {
+            assert!(data.is_empty());
+            0
+        });
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_buffer_read_partial() {
+        let mut buffer = Buffer::new(vec![1, 2, 3, 4, 5]);
+
+        // Read first 3 bytes
+        let result = buffer.read(|data| {
+            assert_eq!(data, &[1, 2, 3, 4, 5]);
+            3
+        });
+
+        assert_eq!(result.unwrap().get(), 3);
+        assert_eq!(buffer.unread(), &[4, 5]);
+        assert_eq!(buffer.offset, 3);
+    }
+
+    #[test]
+    fn test_buffer_read_full() {
+        let mut buffer = Buffer::new(vec![1, 2, 3]);
+
+        // Read all bytes
+        let result = buffer.read(|data| {
+            assert_eq!(data, &[1, 2, 3]);
+            3
+        });
+
+        assert_eq!(result.unwrap().get(), 3);
+        assert!(buffer.unread().is_empty());
+        assert_eq!(buffer.offset, 3);
+    }
+
+    #[test]
+    fn test_buffer_read_zero_bytes() {
+        let mut buffer = Buffer::new(vec![1, 2, 3]);
+
+        let result = buffer.read(|_data| 0);
+
+        assert!(result.is_none());
+        assert_eq!(buffer.unread(), &[1, 2, 3]);
+        assert_eq!(buffer.offset, 0);
+    }
+
+    #[test]
+    fn test_buffer_read_multiple_calls() {
+        let mut buffer = Buffer::new(vec![1, 2, 3, 4, 5, 6]);
+
+        // First read
+        let result1 = buffer.read(|data| {
+            assert_eq!(data, &[1, 2, 3, 4, 5, 6]);
+            2
+        });
+        assert_eq!(result1.unwrap().get(), 2);
+        assert_eq!(buffer.unread(), &[3, 4, 5, 6]);
+
+        // Second read
+        let result2 = buffer.read(|data| {
+            assert_eq!(data, &[3, 4, 5, 6]);
+            3
+        });
+        assert_eq!(result2.unwrap().get(), 3);
+        assert_eq!(buffer.unread(), &[6]);
+
+        // Third read (remaining)
+        let result3 = buffer.read(|data| {
+            assert_eq!(data, &[6]);
+            1
+        });
+        assert_eq!(result3.unwrap().get(), 1);
+        assert!(buffer.unread().is_empty());
+    }
+
+    #[test]
+    fn test_buffer_read_until_empty_resets() {
+        let mut buffer = Buffer::new(vec![1, 2, 3]);
+
+        // Read all data
+        let _ = buffer.read(|data| data.len());
+
+        // Buffer should still have offset set
+        assert_eq!(buffer.offset, 3);
+        assert!(buffer.unread().is_empty());
+
+        // Next read should reset and return None
+        let result = buffer.read(|_| 0);
+
+        assert!(result.is_none());
+        assert_eq!(buffer.offset, 0);
+        assert_eq!(buffer.inner.len(), 0); // Buffer is reset
+    }
+
+    #[test]
+    #[should_panic(expected = "The closure read more bytes than available")]
+    fn test_buffer_read_panic_read_too_much() {
+        let mut buffer = Buffer::new(vec![1, 2, 3]);
+
+        // Try to read more bytes than available
+        buffer.read(|data| {
+            assert_eq!(data.len(), 3);
+            4 // This should panic
+        });
+    }
+
+    #[test]
+    fn test_buffer_unread() {
+        let buffer = Buffer::new(vec![1, 2, 3, 4, 5]);
+        assert_eq!(buffer.unread(), &[1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_buffer_unread_after_partial_read() {
+        let mut buffer = Buffer::new(vec![1, 2, 3, 4, 5]);
+
+        // Read 2 bytes
+        let _ = buffer.read(|_| 2);
+
+        assert_eq!(buffer.unread(), &[3, 4, 5]);
+    }
+
+    #[test]
+    fn test_buffer_drain_empty() {
+        let mut buffer = Buffer::empty();
+
+        let drained = buffer.drain();
+        assert!(drained.is_none());
+    }
+
+    #[test]
+    fn test_buffer_drain_with_data() {
+        let mut buffer = Buffer::new(vec![1, 2, 3, 4, 5]);
+
+        let drained = buffer.drain();
+        assert_eq!(drained.unwrap(), vec![1, 2, 3, 4, 5]);
+
+        // Buffer should be reset after drain
+        assert!(buffer.unread().is_empty());
+        assert_eq!(buffer.offset, 0);
+        assert_eq!(buffer.inner.len(), 0);
+    }
+
+    #[test]
+    fn test_buffer_drain_after_partial_read() {
+        let mut buffer = Buffer::new(vec![1, 2, 3, 4, 5]);
+
+        // Read first 2 bytes
+        let _ = buffer.read(|_| 2);
+
+        let drained = buffer.drain();
+        assert_eq!(drained.unwrap(), vec![3, 4, 5]); // Only unread data
+
+        // Buffer should be reset
+        assert!(buffer.unread().is_empty());
+        assert_eq!(buffer.offset, 0);
+    }
+
+    #[test]
+    fn test_buffer_drain_fully_read() {
+        let mut buffer = Buffer::new(vec![1, 2, 3]);
+
+        // Read all data
+        let _ = buffer.read(|data| data.len());
+
+        let drained = buffer.drain();
+        assert!(drained.is_none()); // Nothing to drain
+    }
+
+    #[test]
+    fn test_buffer_reserve() {
+        let mut buffer = Buffer::empty();
+        let initial_capacity = buffer.inner.capacity();
+
+        buffer.reserve(100);
+        assert!(buffer.inner.capacity() >= initial_capacity + 100);
+    }
+
+    #[test]
+    fn test_buffer_unfilled_mut() {
+        let mut buffer = Buffer::empty();
+        buffer.reserve(10);
+
+        let unfilled = buffer.unfilled_mut();
+        assert_eq!(unfilled.len(), 10);
+        assert_eq!(buffer.unfilled_initialized, 0);
+
+        unsafe { buffer.assume_init_additional(5) };
+        assert_eq!(buffer.unfilled_initialized, 5);
+
+        let unfilled = buffer.unfilled_mut();
+        assert!(!unfilled.is_empty());
+        assert_eq!(buffer.unfilled_initialized, 0); // Should be reset to 0
+    }
+
+    #[test]
+    fn test_buffer_unfilled_initialized_empty() {
+        let buffer = Buffer::empty();
+        let unfilled_init = buffer.unfilled_initialized();
+        assert!(unfilled_init.is_empty());
+    }
+
+    #[test]
+    fn test_buffer_assume_init_additional() {
+        let mut buffer = Buffer::empty();
+        buffer.reserve(10);
+
+        // Simulate writing to unfilled part
+        unsafe {
+            buffer.assume_init_additional(5);
+        }
+
+        assert_eq!(buffer.unfilled_initialized, 5);
+
+        let unfilled_init = buffer.unfilled_initialized();
+        assert_eq!(unfilled_init.len(), 5);
+    }
+
+    #[test]
+    fn test_buffer_set_filled_all() {
+        let mut buffer = Buffer::empty();
+
+        buffer.reserve(10);
+
+        unsafe {
+            buffer.assume_init_additional(3);
+        }
+
+        assert_eq!(buffer.inner.len(), 0);
+
+        buffer.set_filled_all();
+
+        assert_eq!(buffer.inner.len(), 3);
+        assert_eq!(buffer.unfilled_initialized, 0);
+    }
+
+    #[test]
+    fn test_buffer_complex_workflow() {
+        // Test a complex workflow that uses multiple methods
+        let mut buffer = Buffer::new(vec![1, 2, 3, 4, 5]);
+
+        // Read some data
+        let _ = buffer.read(|_| 2);
+        assert_eq!(buffer.unread(), &[3, 4, 5]);
+
+        // Reserve more space
+        buffer.reserve(10);
+
+        // Get unfilled space and mark some as initialized
+        let _unfilled = buffer.unfilled_mut();
+        unsafe {
+            buffer.assume_init_additional(2);
+        }
+
+        // Set the initialized data as filled
+        buffer.set_filled_all();
+
+        // The buffer should now contain original unread data plus the new filled data
+        assert!(buffer.unread().len() >= 3); // At least the original unread data
+
+        // Drain everything
+        let drained = buffer.drain();
+        assert!(drained.is_some());
+        assert!(buffer.unread().is_empty());
     }
 }
