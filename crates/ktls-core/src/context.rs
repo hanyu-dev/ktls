@@ -84,39 +84,46 @@ impl<C: TlsSession> Context<C> {
     ///
     /// Returns the original [`io::Error`] if it cannot be recovered from.
     pub fn handle_io_error<S: AsFd>(&mut self, socket: &S, err: io::Error) -> io::Result<()> {
-        if err.raw_os_error() == Some(libc::EIO) {
-            crate::trace!("Received EIO, handling TLS control message");
+        match err {
+            err if err.raw_os_error() == Some(libc::EIO) => {
+                crate::trace!("Received EIO, handling TLS control message");
 
-            self.handle_tls_control_message(socket)?;
+                self.handle_tls_control_message(socket)
+                    .map_err(Into::into)
+            }
+            err if err.kind() == io::ErrorKind::Interrupted => {
+                crate::trace!("The I/O operation was interrupted, retrying...");
 
-            return Ok(());
+                Ok(())
+            }
+            err if err.kind() == io::ErrorKind::WouldBlock => {
+                crate::trace!("The I/O operation would block, retrying...");
+
+                Ok(())
+            }
+            err if err.kind() == io::ErrorKind::BrokenPipe
+                || err.kind() == io::ErrorKind::ConnectionReset =>
+            {
+                crate::trace!("The kTLS offloaded stream is closed ({err})");
+
+                self.state.set_is_read_closed(true);
+                self.state.set_is_write_closed(true);
+
+                Err(err)
+            }
+            _ => {
+                crate::trace!(
+                    "I/O operation failed, unrecoverable: {err}, try aborting the connection"
+                );
+
+                self.send_tls_alert(socket, AlertLevel::Fatal, AlertDescription::InternalError);
+
+                self.state.set_is_read_closed(true);
+                self.state.set_is_write_closed(true);
+
+                Err(err)
+            }
         }
-
-        if err.kind() == io::ErrorKind::Interrupted {
-            crate::trace!("The I/O operation was interrupted, retrying...");
-
-            return Ok(());
-        }
-
-        if err.kind() == io::ErrorKind::WouldBlock {
-            crate::trace!("The I/O operation would block, retrying...");
-
-            return Ok(());
-        }
-
-        if err.kind() == io::ErrorKind::BrokenPipe {
-            crate::trace!("The underlying stream is closed (BrokenPipe)");
-
-            // No need to send alert, the peer has closed the
-            // connection abruptly.
-        } else {
-            self.send_tls_alert(socket, AlertLevel::Fatal, AlertDescription::InternalError);
-        }
-
-        self.state.set_is_read_closed(true);
-        self.state.set_is_write_closed(true);
-
-        Err(err)
     }
 
     #[allow(clippy::too_many_lines)]
