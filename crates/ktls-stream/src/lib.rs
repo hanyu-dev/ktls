@@ -128,9 +128,10 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
         Ok(StreamRefMutRaw { this: self })
     }
 
+    #[cfg(feature = "tls13-key-update")]
     /// Sends a TLS 1.3 `key_update` message to refresh a connection's keys.
     ///
-    /// See [`Context::refresh_traffic_keys`] for more details.
+    /// Please do check [`Context::refresh_traffic_keys`] for details.
     ///
     /// # Errors
     ///

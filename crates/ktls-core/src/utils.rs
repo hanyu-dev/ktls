@@ -214,6 +214,7 @@ impl Buffer {
 
 #[cfg(test)]
 #[allow(unsafe_code)]
+#[allow(clippy::redundant_closure_for_method_calls)]
 mod tests {
     use super::*;
 

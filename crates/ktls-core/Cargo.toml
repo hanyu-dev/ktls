@@ -14,7 +14,7 @@ readme = "README.md"
 repository.workspace = true
 
 [package.metadata.docs.rs]
-features = ["probe-ktls-compatibility", "shim-rustls"]
+features = ["tls13-key-update", "probe-ktls-compatibility", "shim-rustls"]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
@@ -33,6 +33,9 @@ log = ["dep:log"]
 
 # Logging support with `tracing` crate
 tracing = ["dep:tracing"]
+
+# Enable TLS 1.3 key update support
+tls13-key-update = []
 
 # Enable kernel TLS support probe utilities
 probe-ktls-compatibility = []

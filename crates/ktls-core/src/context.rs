@@ -56,6 +56,7 @@ impl<C: TlsSession> Context<C> {
         &mut self.buffer
     }
 
+    #[cfg(feature = "tls13-key-update")]
     /// Sends a TLS 1.3 `key_update` message to refresh a connection's keys.
     ///
     /// This call refreshes our encryption keys. Once the peer receives the
@@ -84,9 +85,11 @@ impl<C: TlsSession> Context<C> {
     /// returns EAGAIN but the task waker does not seem to be registered
     /// correctly). This issue needs further investigation.
     ///
+    /// Only Linux kernel 6.16 or later fully supports runtime key updates.
+    ///
     /// # Errors
     ///
-    /// - Updateing the TX secret fails.
+    /// - Updating the TX secret fails.
     /// - Sending the `KeyUpdate` message fails.
     /// - Setting the TX secret on the socket fails.
     pub fn refresh_traffic_keys<S: AsFd>(&mut self, socket: &S) -> Result<()> {
@@ -358,59 +361,93 @@ impl<C: TlsSession> Context<C> {
 
                     let key_update_request = KeyUpdateRequest::from_int(payload);
 
-                    if let Err(error) = self
-                        .session
-                        .update_rx_secret()
-                        .and_then(|secret| secret.set(socket))
-                    {
-                        crate::error!("Failed to update tx secret: {error}");
+                    if !matches!(
+                        key_update_request,
+                        KeyUpdateRequest::UpdateNotRequested | KeyUpdateRequest::UpdateRequested
+                    ) {
+                        crate::warn!(
+                            "Received KeyUpdate message with unknown request value: {payload}"
+                        );
 
-                        return self.abort(socket, error, AlertDescription::InternalError);
+                        return self.abort(
+                            socket,
+                            InvalidMessage::InvalidKeyUpdate,
+                            InvalidMessage::InvalidKeyUpdate.description(),
+                        );
                     }
 
-                    match key_update_request {
-                        KeyUpdateRequest::UpdateNotRequested => {}
-                        KeyUpdateRequest::UpdateRequested => {
-                            // Notify the peer that we are updating our TX secret as well.
-                            if let Err(error) = send_tls_control_message(
-                                socket.as_fd().as_raw_fd(),
-                                ContentType::Handshake,
-                                &mut [
-                                    HandshakeType::KeyUpdate.to_int(), // typ
-                                    0,
-                                    0,
-                                    1, // length
-                                    KeyUpdateRequest::UpdateNotRequested.to_int(),
-                                ],
-                            )
-                            .map_err(Error::KeyUpdateFailed)
-                            {
-                                // Failed to notify the peer, abort the connection.
-                                crate::error!("Failed to send KeyUpdate message: {error}");
+                    #[cfg(not(feature = "tls13-key-update"))]
+                    {
+                        crate::warn!(
+                            "Received KeyUpdate [{key_update_request:?}], TLS 1.3 key update \
+                             support is disabled"
+                        );
 
-                                return self.abort(socket, error, AlertDescription::InternalError);
-                            }
+                        return self.abort(
+                            socket,
+                            InvalidMessage::UnexpectedMessage(
+                                "TLS 1.3 key update support is disabled",
+                            ),
+                            AlertDescription::InternalError,
+                        );
+                    }
 
-                            if let Err(error) = self
-                                .session
-                                .update_tx_secret()
-                                .and_then(|secret| secret.set(socket))
-                            {
-                                crate::error!("Failed to update TX secret: {error}");
+                    #[cfg(feature = "tls13-key-update")]
+                    {
+                        if let Err(error) = self
+                            .session
+                            .update_rx_secret()
+                            .and_then(|secret| secret.set(socket))
+                        {
+                            crate::error!("Failed to update secret: {error}");
 
-                                return self.abort(socket, error, AlertDescription::InternalError);
-                            }
+                            return self.abort(socket, error, AlertDescription::InternalError);
                         }
-                        KeyUpdateRequest::Unknown(_payload) => {
-                            crate::warn!(
-                                "Received KeyUpdate message with unknown request value: {_payload}"
-                            );
 
-                            return self.abort(
-                                socket,
-                                InvalidMessage::InvalidKeyUpdate,
-                                InvalidMessage::InvalidKeyUpdate.description(),
-                            );
+                        match key_update_request {
+                            KeyUpdateRequest::UpdateNotRequested => {}
+                            KeyUpdateRequest::UpdateRequested => {
+                                // Notify the peer that we are updating our TX secret as well.
+                                if let Err(error) = send_tls_control_message(
+                                    socket.as_fd().as_raw_fd(),
+                                    ContentType::Handshake,
+                                    &mut [
+                                        HandshakeType::KeyUpdate.to_int(), // typ
+                                        0,
+                                        0,
+                                        1, // length
+                                        KeyUpdateRequest::UpdateNotRequested.to_int(),
+                                    ],
+                                )
+                                .map_err(Error::KeyUpdateFailed)
+                                {
+                                    // Failed to notify the peer, abort the connection.
+                                    crate::error!("Failed to send KeyUpdate message: {error}");
+
+                                    return self.abort(
+                                        socket,
+                                        error,
+                                        AlertDescription::InternalError,
+                                    );
+                                }
+
+                                if let Err(error) = self
+                                    .session
+                                    .update_tx_secret()
+                                    .and_then(|secret| secret.set(socket))
+                                {
+                                    crate::error!("Failed to update TX secret: {error}");
+
+                                    return self.abort(
+                                        socket,
+                                        error,
+                                        AlertDescription::InternalError,
+                                    );
+                                }
+                            }
+                            KeyUpdateRequest::Unknown(_) => {
+                                unreachable!()
+                            }
                         }
                     }
                 }
