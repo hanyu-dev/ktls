@@ -124,7 +124,7 @@ impl TlsCryptoInfoTx {
     pub fn set<S: AsFd>(&self, socket: &S) -> Result<()> {
         self.inner
             .set(socket, libc::TLS_TX)
-            .map_err(Error::CryptoMaterialTx)
+            .map_err(Error::CryptoMaterial)
     }
 }
 
@@ -141,7 +141,7 @@ impl TlsCryptoInfoRx {
     pub fn set<S: AsFd>(&self, socket: &S) -> Result<()> {
         self.inner
             .set(socket, libc::TLS_RX)
-            .map_err(Error::CryptoMaterialRx)
+            .map_err(Error::CryptoMaterial)
     }
 }
 

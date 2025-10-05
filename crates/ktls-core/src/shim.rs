@@ -23,7 +23,7 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::client::ClientConne
     fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx> {
         let (seq, secrets) = self
             .update_tx_secret()
-            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(format!("{e}"))))?;
+            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
 
         TlsCryptoInfoTx::new(
             self.protocol_version().into(),
@@ -36,7 +36,7 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::client::ClientConne
     fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx> {
         let (seq, secrets) = self
             .update_rx_secret()
-            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(format!("{e}"))))?;
+            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
 
         TlsCryptoInfoRx::new(
             self.protocol_version().into(),
@@ -45,9 +45,10 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::client::ClientConne
         )
     }
 
+    #[track_caller]
     fn handle_new_session_ticket(&mut self, payload: &[u8]) -> Result<()> {
         self.handle_new_session_ticket(payload)
-            .map_err(|e| Error::HandleNewSessionTicketFailed(io::Error::other(format!("{e}"))))
+            .map_err(|e| Error::HandleNewSessionTicketFailed(io::Error::other(e)))
     }
 }
 
@@ -65,7 +66,7 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::server::ServerConne
     fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx> {
         let (seq, secrets) = self
             .update_tx_secret()
-            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(format!("{e}"))))?;
+            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
 
         TlsCryptoInfoTx::new(
             self.protocol_version().into(),
@@ -78,7 +79,7 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::server::ServerConne
     fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx> {
         let (seq, secrets) = self
             .update_rx_secret()
-            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(format!("{e}"))))?;
+            .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
 
         TlsCryptoInfoRx::new(
             self.protocol_version().into(),
@@ -87,9 +88,10 @@ impl TlsSession for rustls::kernel::KernelConnection<rustls::server::ServerConne
         )
     }
 
-    #[track_caller]
     fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()> {
-        unreachable!("Only clients receive NewSessionTicket messages")
+        Err(Error::HandleNewSessionTicketFailed(io::Error::other(
+            "Server should not receive new session ticket",
+        )))
     }
 }
 
@@ -104,6 +106,7 @@ impl From<rustls::ProtocolVersion> for ProtocolVersion {
 impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
     type Error = Error;
 
+    #[track_caller]
     fn try_from(value: rustls::ConnectionTrafficSecrets) -> Result<Self, Self::Error> {
         match value {
             rustls::ConnectionTrafficSecrets::Aes128Gcm { key, iv } => Ok(Self::Aes128Gcm {
@@ -146,7 +149,7 @@ impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
                     salt: [],
                 })
             }
-            secrets => Err(Error::CryptoMaterialTx(io::Error::other(format!(
+            secrets => Err(Error::CryptoMaterial(io::Error::other(format!(
                 "The given crypto material is not supported by the running kernel: {}",
                 std::any::type_name_of_val(&secrets)
             )))),

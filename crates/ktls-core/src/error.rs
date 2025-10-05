@@ -12,19 +12,18 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug)]
 /// Unified error type for this crate.
 pub enum Error {
+    /// Errors from outer TLS implementations.
+    Tls(Box<dyn std::error::Error + Send + Sync>),
+
     /// Setting up TLS ULP failed.
     Ulp(io::Error),
 
     /// Unsupported TLS protocol version.
     UnsupportedProtocolVersion(ProtocolVersion),
 
-    /// Invalid crypto material (TX), this is likely caused by a older kernel
+    /// Invalid crypto material, this is likely caused by a older kernel
     /// which doesn't support the requested TLS version or cipher suite.
-    CryptoMaterialTx(io::Error),
-
-    /// Invalid crypto material (RX), this is likely caused by a older kernel
-    /// which doesn't support the requested TLS version or cipher suite.
-    CryptoMaterialRx(io::Error),
+    CryptoMaterial(io::Error),
 
     /// The peer sent us a TLS message with invalid contents.
     InvalidMessage(InvalidMessage),
@@ -59,22 +58,19 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Tls(e) => {
+                write!(f, "TLS error: {e}")
+            }
             Self::Ulp(e) => {
                 write!(f, "Failed to set TLS ULP: {e}")
             }
             Self::UnsupportedProtocolVersion(v) => {
                 write!(f, "The given TLS protocol version is not supported: {v:?}")
             }
-            Self::CryptoMaterialTx(e) => {
+            Self::CryptoMaterial(e) => {
                 write!(
                     f,
-                    "The given crypto material (TX) is not supported by the running kernel: {e}"
-                )
-            }
-            Self::CryptoMaterialRx(e) => {
-                write!(
-                    f,
-                    "The given crypto material (RX) is not supported by the running kernel: {e}"
+                    "The given crypto material is not supported by the running kernel: {e}"
                 )
             }
             Self::InvalidMessage(e) => write!(f, "Invalid TLS message: {e:?}"),
@@ -93,9 +89,9 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         #[allow(clippy::match_same_arms)]
         match self {
+            Self::Tls(e) => Some(&**e),
             Self::Ulp(e) => Some(e),
-            Self::CryptoMaterialTx(e) => Some(e),
-            Self::CryptoMaterialRx(e) => Some(e),
+            Self::CryptoMaterial(e) => Some(e),
             Self::KeyUpdateFailed(e) => Some(e),
             Self::HandleNewSessionTicketFailed(e) => Some(e),
             Self::General(e) => Some(e),

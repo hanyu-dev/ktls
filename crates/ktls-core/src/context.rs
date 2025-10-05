@@ -56,6 +56,7 @@ impl<C: TlsSession> Context<C> {
         &mut self.buffer
     }
 
+    #[track_caller]
     #[cfg(feature = "tls13-key-update")]
     /// Sends a TLS 1.3 `key_update` message to refresh a connection's keys.
     ///
@@ -142,6 +143,7 @@ impl<C: TlsSession> Context<C> {
         Ok(())
     }
 
+    #[track_caller]
     /// Handles [`io::Error`]s from I/O operations on kTLS-configured sockets.
     ///
     /// # Overview
@@ -216,6 +218,7 @@ impl<C: TlsSession> Context<C> {
         }
     }
 
+    #[track_caller]
     #[allow(clippy::too_many_lines)]
     /// Handles TLS control messages received by kernel.
     ///
@@ -314,6 +317,7 @@ impl<C: TlsSession> Context<C> {
         Ok(())
     }
 
+    #[track_caller]
     #[allow(clippy::too_many_lines)]
     /// Handles a TLS alert received from the peer.
     fn handle_tls_control_message_handshake<S: AsFd>(&mut self, socket: &S) -> Result<()> {
@@ -507,6 +511,7 @@ impl<C: TlsSession> Context<C> {
         Ok(())
     }
 
+    #[track_caller]
     /// Handles a TLS alert received from the peer.
     fn handle_tls_control_message_alert<S: AsFd>(
         &mut self,
@@ -570,6 +575,7 @@ impl<C: TlsSession> Context<C> {
         Ok(())
     }
 
+    #[track_caller]
     /// Closes the read side of the kTLS connection and sends a `close_notify`
     /// alert to the peer.
     pub fn shutdown<S: AsFd>(&mut self, socket: &S) {
@@ -585,6 +591,7 @@ impl<C: TlsSession> Context<C> {
         self.state.set_is_write_closed(true);
     }
 
+    #[track_caller]
     /// Aborts the kTLS connection and sends a fatal alert to the peer.
     fn abort<T, S, E, D>(&mut self, socket: &S, error: E, description: D) -> Result<T>
     where
@@ -602,6 +609,7 @@ impl<C: TlsSession> Context<C> {
         Err(error.into())
     }
 
+    #[track_caller]
     /// Sends a TLS alert to the peer.
     fn send_tls_alert<S: AsFd>(
         &mut self,

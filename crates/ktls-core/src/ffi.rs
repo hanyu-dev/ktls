@@ -22,6 +22,7 @@ union CmsgBuf<const CMSG_BUF_SIZE: usize> {
     _buf: [u8; CMSG_BUF_SIZE],
 }
 
+#[track_caller]
 /// A safe wrapper around [`libc::sendmsg`] sending a TLS control message.
 ///
 /// # Arguments
@@ -76,6 +77,7 @@ pub fn send_tls_control_message(
     Ok(ret as usize)
 }
 
+#[track_caller]
 /// A safe wrapper around [`libc::recvmsg`] receiving TLS record payloads.
 ///
 /// # Arguments
