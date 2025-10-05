@@ -97,7 +97,17 @@ impl Compatibilities {
         test!(TLSv1_3, Aria128Gcm, tls13, set_aria_128_gcm);
         test!(TLSv1_3, Aria256Gcm, tls13, set_aria_256_gcm);
 
-        Ok(Some(Self { tls12, tls13 }))
+        if tls12.is_unsupported() && tls13.is_unsupported() {
+            crate::error!("All cipher suites are unsupported while kTLS seems to be supported");
+
+            return Ok(None);
+        }
+
+        let this = Self { tls12, tls13 };
+
+        crate::trace!("kTLS compatibilities probed: {:#?}", this);
+
+        Ok(Some(this))
     }
 }
 
