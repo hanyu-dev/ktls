@@ -47,6 +47,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     #[must_use]
     /// Creates an empty [`Buffer`].
     pub const fn empty() -> Self {
@@ -119,6 +120,7 @@ impl Buffer {
     }
 
     #[inline]
+    #[must_use]
     /// Drains the inner buffer data, clearing the buffer but does not change
     /// its capacity, and returns the drained data.
     pub fn drain(&mut self) -> Option<Vec<u8>> {

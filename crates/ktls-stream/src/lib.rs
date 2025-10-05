@@ -17,33 +17,27 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 pin_project_lite::pin_project! {
     #[derive(Debug)]
     #[project = StreamProj]
-    /// A thin wrapper around a socket with kernel TLS (kTLS) offload configured.
+    /// A thin wrapper around a kTLS offloaded socket.
     ///
-    /// This implements traits [`Read`](std::io::Read) and
-    /// [`Write`](std::io::Write), [`AsyncRead`](tokio::io::AsyncRead) and
+    /// This implements [`Read`](std::io::Read) and [`Write`](std::io::Write),
+    /// [`AsyncRead`](tokio::io::AsyncRead) and
     /// [`AsyncWrite`](tokio::io::AsyncWrite) (when feature `async-io-tokio` is
     /// enabled).
     ///
-    /// ## Behaviours
+    /// # Behaviours
     ///
-    /// Once a TLS `close_notify` alert from the peer is received, all subsequent
-    /// read operations will return EOF.
+    /// Once receives a `close_notify` alert from the peer, all subsequent read
+    /// operations will return EOF (unless the inner buffer contains unread data);
+    /// once the caller explicitly calls `(poll_)shutdown` on the stream, a
+    /// `close_notify` alert would be sent to the peer and all subsequent write
+    /// operations will return 0 bytes, indicating that the stream is closed for
+    /// writing. When the [`Stream`] is dropped, it will also perform graceful
+    /// shutdown automatically.
     ///
-    /// Once the caller explicitly calls `(poll_)shutdown` on the stream, all
-    /// subsequent write operations will return 0 bytes, indicating that the
-    /// stream is closed for writing.
-    ///
-    /// Once the stream is being dropped, a `close_notify` alert would be sent to
-    /// the peer automatically before shutting down the inner socket, according to
-    /// [RFC 8446, section 6.1].
-    ///
-    /// The caller may call `(poll_)shutdown` on the stream to shutdown explicitly
-    /// both sides of the stream. Currently, there's no way provided by this crate
-    /// to shutdown the TLS stream write side only. For TLS 1.2, this is ideal since
-    /// once one party sends a `close_notify` alert, *the other party MUST respond
-    /// with a `close_notify` alert of its own and close down the connection
-    /// immediately*, according to [RFC 5246, section 7.2.1]; for TLS 1.3, *both
-    /// parties need not wait to receive a "`close_notify`" alert before
+    /// For TLS 1.2, once one party sends a `close_notify` alert, *the other party
+    /// MUST respond with a `close_notify` alert of its own and close down the
+    /// connection immediately*, according to [RFC 5246, section 7.2.1]; for TLS
+    /// 1.3, *both parties need not wait to receive a "`close_notify`" alert before
     /// closing their read side of the connection*, according to [RFC 8446, section
     /// 6.1].
     ///
@@ -67,9 +61,9 @@ pin_project_lite::pin_project! {
 }
 
 impl<S: AsFd, C: TlsSession> Stream<S, C> {
-    /// Creates a new kTLS stream from the given socket, TLS session and an
+    /// Creates a new [`Stream`] from the given socket, TLS session and an
     /// optional buffer (may be early data received from peer during
-    /// handshaking).
+    /// handshake or a pre-allocated buffer).
     ///
     /// # Prerequisites
     ///
@@ -83,8 +77,8 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
         }
     }
 
-    /// Returns a mutable reference to the inner socket if the TLS connection is
-    /// not closed (unidirectionally or bidirectionally).
+    /// Returns a [`StreamRefMutRaw`] which provides low-level access to the
+    /// inner socket.
     ///
     /// This requires a mutable reference to the [`Stream`] to ensure a
     /// exclusive access to the inner socket.
@@ -100,15 +94,12 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     ///   - Application data received due to improper usage of
     ///     [`StreamRefMutRaw::handle_io_error`].
     ///
-    /// * The caller **MAY** handle any [`io::Result`]s returned by I/O
-    ///   operations directly on the inner socket with
+    /// * The caller **MAY** handle any [`io::Error`]s returned by direct I/O
+    ///   operations on the inner socket with
     ///   [`StreamRefMutRaw::handle_io_error`].
     ///
-    /// * The caller **MUST NOT** shutdown the inner socket directly, which will
-    ///   lead to undefined behaviours. Instead, the caller **MAY**
-    ///   `(poll_)shutdown` explictly the [`Stream`] to gracefully shutdown the
-    ///   TLS stream (with `close_notify` be sent), or just drop the stream to
-    ///   do automatic graceful shutdown.
+    /// * The caller **MUST NOT** *shutdown* the inner socket directly, which
+    ///   will lead to undefined behaviours.
     ///
     /// # Errors
     ///
@@ -118,9 +109,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
             return Err(AccessRawStreamError::HasBufferedData(buffer));
         }
 
-        let state = self.context.state();
-
-        if state.is_closed() {
+        if self.context.state().is_closed() {
             // Fully closed, just return error.
             return Err(AccessRawStreamError::Closed);
         }
@@ -129,9 +118,10 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     }
 
     #[cfg(feature = "tls13-key-update")]
-    /// Sends a TLS 1.3 `key_update` message to refresh a connection's keys.
+    /// [`Context::refresh_traffic_keys`] against the inner socket.
     ///
-    /// Please do check [`Context::refresh_traffic_keys`] for details.
+    /// Use with caution, and do check [`Context::refresh_traffic_keys`] for
+    /// details.
     ///
     /// # Errors
     ///
@@ -148,15 +138,10 @@ where
     S: AsFd,
     rustls::kernel::KernelConnection<Data>: TlsSession,
 {
-    /// Constructs a new [`Stream`] from a socket, TLS secrets, and TLS session
-    /// context.
-    ///
-    /// # Overview
-    ///
-    /// This creates a [`Stream`] from the provided socket, extracted TLS
-    /// secrets ([`rustls::ExtractedSecrets`]), and TLS session context
-    /// ([`rustls::kernel::KernelConnection`]). An optional buffer may be
-    /// provided for early data received during handshake.
+    /// Constructs a new [`Stream`] [`Stream`] from the provided socket,
+    /// extracted TLS secrets ([`rustls::ExtractedSecrets`]), and TLS
+    /// session context ([`rustls::kernel::KernelConnection`]). An optional
+    /// buffer may be provided for early data received during handshake.
     ///
     /// The secrets and context must be extracted from a
     /// [`rustls::client::UnbufferedClientConnection`] or
@@ -170,7 +155,8 @@ where
     ///
     /// ## Errors
     ///
-    /// Returns an error if prerequisites aren't met or kernel TLS setup fails.
+    /// Unsupported protocol version or cipher suite, or failure to set up
+    /// kTLS params on the socket.
     pub fn from(
         socket: S,
         secrets: rustls::ExtractedSecrets,

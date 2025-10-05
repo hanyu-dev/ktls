@@ -35,7 +35,7 @@ use crate::tls::{AeadKey, ConnectionTrafficSecrets, ProtocolVersion};
 ///
 /// The caller may check if the error is due to the running kernel not
 /// supporting kTLS (e.g., kernel module `tls` not being enabled or the
-/// kernel version being too old) totally with [`Error::is_ktls_unsupported`].
+/// kernel version being too old) with [`Error::is_ktls_unsupported`].
 pub fn setup_ulp<S: AsFd>(socket: &S) -> Result<()> {
     setsockopt(socket, sockopt::TcpUlp::default(), b"tls")
         .map_err(io::Error::from)
@@ -44,7 +44,8 @@ pub fn setup_ulp<S: AsFd>(socket: &S) -> Result<()> {
 
 /// Sets the kTLS parameters on the socket after the TLS handshake is completed.
 ///
-/// This is a low-level function, usually you don't need to call it directly.
+/// Notes that most kernels do not support setting up TLS crypto materials
+/// twice more times.
 ///
 /// ## Errors
 ///

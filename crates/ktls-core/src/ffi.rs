@@ -23,13 +23,13 @@ union CmsgBuf<const CMSG_BUF_SIZE: usize> {
 }
 
 #[track_caller]
-/// A safe wrapper around [`libc::sendmsg`] sending a TLS control message.
+/// A safe wrapper around [`libc::sendmsg`] to send a TLS control message.
 ///
 /// # Arguments
 ///
 /// - `socket`: The file descriptor to send the message to.
 /// - `content_type`: The TLS content type.
-/// - `payload`: The payload to send.
+/// - `payload`: The payload to send (not encrypted).
 ///
 /// # Returns
 ///
@@ -78,7 +78,7 @@ pub fn send_tls_control_message(
 }
 
 #[track_caller]
-/// A safe wrapper around [`libc::recvmsg`] receiving TLS record payloads.
+/// A safe wrapper around [`libc::recvmsg`] to receive TLS record payloads.
 ///
 /// # Arguments
 ///
@@ -103,7 +103,6 @@ pub fn recv_tls_record(socket: RawFd, buffer: &mut Buffer) -> io::Result<Content
 
     let mut cmsg_buf: CmsgBuf<{ cmsg_space::<[u8; 1]>() }> = unsafe { mem::zeroed() };
 
-    // FIXME: For Linux kernel <= 5.10, will read more cmsgs than one (?).
     msghdr.msg_control = ptr::from_mut(&mut cmsg_buf).cast();
     msghdr.msg_controllen = mem::size_of_val(&cmsg_buf) as _;
 

@@ -23,6 +23,26 @@ Abstraction for implementing Linux kernel TLS (kTLS) offload in Rust.
 
   (not published on crates.io).
 
+## Kernel Compatibility
+
+We perform daily CI tests against the following kernel versions:
+
+|     Ver.     | Min. Ver. |
+| :----------: | :-------: |
+|   mainline   |     -     |
+|    stable    |     -     |
+| 6.12.x (LTS) |  6.12.0   |
+| 6.6.x (LTS)  |   6.6.0   |
+| 6.1.x (LTS)  |  6.1.28   |
+| 5.15.x (LTS) |  5.15.25  |
+| 5.10.x (LTS) | 5.10.102  |
+| 5.4.x (LTS)  |  5.4.181  |
+
+- For LTS versions, we test against the latest patch.
+- Have simply tested the minimum applicable kernel version, and listed above, though lacking CI testing guarantees.
+
+  We recommend using the latest Linux kernel, at least 6.6 LTS, for better support of kTLS.
+
 ## Information
 
 This repository does not serve as a drop-in replacement of crate [`ktls`](https://crates.io/crates/ktls) but rather provides a more generic interface for implementing kTLS offload with any TLS library.

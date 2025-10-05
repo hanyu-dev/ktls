@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 categories.workspace = true
 description = """
-Abstraction for implementing Linux kernel TLS (kTLS) offload in Rust.
+`Stream` abstraction for implementing Linux kernel TLS (kTLS) offload.
 """
 keywords.workspace = true
 license.workspace = true

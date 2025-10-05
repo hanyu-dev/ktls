@@ -28,7 +28,7 @@ pub struct Context<C: TlsSession> {
 
 impl<C: TlsSession> Context<C> {
     /// Creates a new kTLS context with the given TLS session and optional
-    /// buffer (can be TLS early data received from peer during handshake, or
+    /// buffer (can be TLS early data received from peer during handshake, or a
     /// pre-allocated buffer).
     pub fn new(session: C, buffer: Option<Buffer>) -> Self {
         Self {
@@ -68,37 +68,43 @@ impl<C: TlsSession> Context<C> {
     ///
     /// # Notes
     ///
-    /// Note that TLS implementations may enforce limits on the number of
-    /// `key_update` messages allowed on a given connection to prevent
-    /// denial of service. Therefore, this should be called sparingly.
+    /// Note that TLS implementations (including kTLS) may enforce limits on the
+    /// number of `key_update` messages allowed on a given connection to
+    /// prevent denial of service. Therefore, this should be called
+    /// sparingly.
     ///
     /// Since the kernel will never implicitly and automatically trigger key
     /// updates according to the selected cipher suite's cryptographic
     /// constraints, the application is responsible for calling this method
     /// as needed to maintain security.
     ///
+    /// Only Linux 6.13 or later supports TLS 1.3 rekey, see [the commit], and
+    /// we gate this method behind feature flag `tls13-key-update`. This method
+    /// might return an error `EBUSY`, which most likely indicates that the
+    /// running kernel does not support this feature.
+    ///
     /// # Known Issues
     ///
     /// Under the condition that both parties are kTLS offloaded and the
-    /// server program uses the Tokio asynchronous runtime, if the server
-    /// initiates a Key Update and then immediately performs a read I/O
-    /// operation, it will cause the program to hang (the read I/O operation
-    /// returns EAGAIN but the task waker does not seem to be registered
-    /// correctly). This issue needs further investigation.
-    ///
-    /// Only Linux kernel 6.16 or later fully supports runtime key updates.
+    /// server uses the Tokio asynchronous runtime, if the server initiates a
+    /// `KeyUpdate` by calling this method and then immediately performs a read
+    /// I/O operation, the program will hang (the read I/O operation returns
+    /// EAGAIN but the task waker does not seem to be registered correctly).
+    /// This issue needs further investigation.
     ///
     /// # Errors
     ///
     /// - Updating the TX secret fails.
     /// - Sending the `KeyUpdate` message fails.
     /// - Setting the TX secret on the socket fails.
+    ///
+    /// [the commit]: https://github.com/torvalds/linux/commit/47069594e67e882ec5c1d8d374f6aab037511509
     pub fn refresh_traffic_keys<S: AsFd>(&mut self, socket: &S) -> Result<()> {
         crate::trace!("Trigger traffic keys refreshing...");
 
         if self.session.protocol_version() != ProtocolVersion::TLSv1_3 {
             crate::warn!(
-                "Key update is only supported for TLS 1.3 connections, current version: {:?}",
+                "Key update is only supported by TLS 1.3, current: {:?}",
                 self.session.protocol_version()
             );
 

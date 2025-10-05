@@ -1,4 +1,4 @@
-//! Utilities for probing kernel TLS support.
+//! See [`Compatibilities::probe`].
 
 use std::io;
 use std::net::{TcpListener, TcpStream};
@@ -22,7 +22,19 @@ pub struct Compatibilities {
 impl Compatibilities {
     /// Probes the current Linux kernel for kTLS cipher suites compatibility.
     ///
-    /// Returns `None` if the kernel does not support kTLS at all.
+    /// Returns `Ok(None)` if the running kernel does not support kTLS, i.e.,
+    /// `tls` module is not available. If the kernel is modern enough (at least
+    /// 5.4), it should support kTLS but might not have `tls` module loaded.
+    ///
+    /// The caller can cache the successful result of this method, while the
+    /// supporting cipher suites are unlikely to change during the program's
+    /// lifetime. Note that the attempt to configure TLS ULP still might fail
+    /// due to kTLS being unsupported, while the `tls` module can be loaded
+    /// / unloaded at runtime.
+    ///
+    /// The caller should check the returned `Compatibility`s with
+    /// [`Compatibility::is_unsupported`]  to see whether the desired TLS
+    /// version is totally unsupported.
     ///
     /// ## Errors
     ///

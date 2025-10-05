@@ -10,7 +10,6 @@ authors = ["Hantong Chen <cxwdyx620@gmail.com>"]
 categories = ["network-programming"]
 keywords = ["ktls", "linux", "tls"]
 license = "MIT OR Apache-2.0"
-readme = "README.md"
 repository = "https://github.com/hanyu-dev/ktls"
 
 [workspace.dependencies]
