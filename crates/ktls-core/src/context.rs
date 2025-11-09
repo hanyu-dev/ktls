@@ -290,9 +290,12 @@ impl<C: TlsSession> Context<C> {
 
                 self.buffer.set_filled_all();
             }
-            Ok(_content_type) => {
+            Ok(ContentType::Heartbeat) => {
+                // For security reasons, we do not support Heartbeat messages.
+
                 crate::error!(
-                    "Received unexpected TLS control message: content_type={_content_type:?}",
+                    "Received unexpected TLS control message: content_type={:?}",
+                    ContentType::Heartbeat
                 );
 
                 return self.abort(
@@ -301,13 +304,36 @@ impl<C: TlsSession> Context<C> {
                     InvalidMessage::InvalidContentType.description(),
                 );
             }
+            Ok(ContentType::Unknown(unknown_content_type)) => {
+                match self.session.handle_unknown_message(
+                    unknown_content_type,
+                    self.buffer.unfilled_initialized(),
+                ) {
+                    Ok(_) => {
+                        crate::trace!(
+                            "Handled unknown content type message: \
+                             content_type={unknown_content_type:?}",
+                        );
+                    }
+                    Err(e) => {
+                        crate::error!(
+                            "Received unexpected TLS control message: \
+                             content_type={unknown_content_type:?}",
+                        );
+
+                        return self.abort(
+                            socket,
+                            e,
+                            InvalidMessage::InvalidContentType.description(),
+                        );
+                    }
+                }
+            }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 // No TLS control message available, the caller should retry
                 // the I/O operation.
 
                 crate::trace!("No TLS control message available, retrying...");
-
-                return Ok(());
             }
             Err(error) => {
                 crate::error!("Failed to receive TLS control message: {error}");

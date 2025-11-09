@@ -1,6 +1,6 @@
 //! Shim layer for TLS protocol implementations.
 
-use crate::error::Result;
+use crate::error::{InvalidMessage, Result};
 use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 
 /// TLS session context abstraction.
@@ -54,6 +54,15 @@ pub trait TlsSession {
     ///
     /// Various errors may be returned depending on the implementation.
     fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()>;
+
+    #[inline]
+    /// Handles the message with unknown content type received from the peer.
+    ///
+    /// By default, this method returns an
+    /// [`InvalidContentType`](InvalidMessage::InvalidContentType) error.
+    fn handle_unknown_message(&mut self, _content_type: u8, _payload: &[u8]) -> Result<()> {
+        Err(InvalidMessage::InvalidContentType.into())
+    }
 }
 
 #[derive(zeroize_derive::ZeroizeOnDrop)]
