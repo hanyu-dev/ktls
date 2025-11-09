@@ -67,7 +67,18 @@ jobs:
               exit 1
             fi
 
-            json_array=$(echo "$releases_json" | jq -c '[.releases[] | select(.source != null) | {version, source}]')
+            latest_releases=$(echo "$releases_json" | jq -c '[.releases[] | select(.source != null) | {version, source}]')
+
+            fixed_versions='[
+              {"version": "6.12", "source": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.xz"},
+              {"version": "6.6", "source": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.tar.xz"},
+              {"version": "6.1.28", "source": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.28.tar.xz"},
+              {"version": "5.15.25", "source": "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.15.25.tar.xz"},
+              {"version": "5.10.102", "source": "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.10.102.tar.xz"},
+              {"version": "5.4.181", "source": "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.181.tar.xz"}
+            ]'
+
+            json_array=$(echo "$latest_releases $fixed_versions" | jq -c -s '.[0] + .[1] | unique_by(.version) | sort_by(.version | gsub("-.*"; "") | split(".") | map(tonumber)) | reverse')
           fi
 
           echo "matrix=$json_array" >> $GITHUB_OUTPUT
