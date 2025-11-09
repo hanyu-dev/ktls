@@ -30,8 +30,11 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch:
     inputs:
-      kernel-versions:
-        description: "Space-separated list of Linux kernel versions to test"
+      version:
+        description: "The Linux kernel version to test"
+        required: true
+      source:
+        description: "The compressed source code's download URL"
         required: true
 
 permissions:
@@ -52,52 +55,23 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          if [ -n "${GITHUB_EVENT_INPUTS_KERNEL_VERSIONS}" ]; then
-            # Manual trigger with custom versions
-            versions="${GITHUB_EVENT_INPUTS_KERNEL_VERSIONS}"
-            echo "Using manual input versions: $versions"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            json_array="[{\"version\":\"${{ github.event.inputs.version }}\",\"source\":\"${{ github.event.inputs.source }}\"}]"
           else
-            # Get from https://www.kernel.org/releases.json
             echo "Fetching latest kernel versions from kernel.org..."
-            
-            # Fetch releases data
+
             releases_json=$(curl -s https://www.kernel.org/releases.json)
 
             if [ -z "$releases_json" ]; then
               echo "Failed to fetch kernel releases data"
               exit 1
             fi
-            
-            # Extract versions for specific kernel series
-            mainline=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "mainline") | .version')
-            stable=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "stable") | .version')
-            
-            # Extract latest longterm versions for specific series
-            lts_6_12=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "longterm" and (.version | startswith("6.12."))) | .version' | head -1)
-            lts_6_6=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "longterm" and (.version | startswith("6.6."))) | .version' | head -1)
-            lts_6_1=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "longterm" and (.version | startswith("6.1."))) | .version' | head -1)
-            lts_5_15=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "longterm" and (.version | startswith("5.15."))) | .version' | head -1)
-            lts_5_10=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "longterm" and (.version | startswith("5.10."))) | .version' | head -1)
-            lts_5_4=$(echo "$releases_json" | jq -r '.releases[] | select(.moniker == "longterm" and (.version | startswith("5.4."))) | .version' | head -1)
-            
-            # Build versions list with fallbacks for missing LTS versions
-            versions=""
-            [ -n "$mainline" ] && versions="$versions $mainline"
-            [ -n "$stable" ] && versions="$versions $stable"
-            [ -n "$lts_6_12" ] && versions="$versions $lts_6_12"
-            [ -n "$lts_6_6" ] && versions="$versions $lts_6_6"
-            [ -n "$lts_6_1" ] && versions="$versions $lts_6_1"
-            [ -n "$lts_5_15" ] && versions="$versions $lts_5_15"
-            [ -n "$lts_5_10" ] && versions="$versions $lts_5_10"
-            [ -n "$lts_5_4" ] && versions="$versions $lts_5_4"
+
+            json_array=$(echo "$releases_json" | jq -c '[.releases[] | select(.source != null) | {version, source}]')
           fi
 
-          # Convert space-separated list to JSON array
-          json_array=$(echo "$versions" | xargs | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -s -c .)
           echo "matrix=$json_array" >> $GITHUB_OUTPUT
           echo "Generated matrix: $json_array"
-        env:
-          GITHUB_EVENT_INPUTS_KERNEL_VERSIONS: ${{ github.event.inputs.kernel-versions }}
 
   build-test-binary:
     name: Build test binary
@@ -133,15 +107,16 @@ jobs:
           overwrite: true
 
   build-kernel:
-    name: Build kernel - ${{ matrix.kernel-version }}
+    name: Build kernel - ${{ matrix.version }}
     needs: prepare-kernel-versions
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        kernel-version: ${{fromJson(needs.prepare-kernel-versions.outputs.matrix)}}
+        include: ${{fromJson(needs.prepare-kernel-versions.outputs.matrix)}}
       fail-fast: false
     env:
-      KERNEL_VERSION: ${{ matrix.kernel-version }}
+      KERNEL_VERSION: ${{ matrix.version }}
+      KERNEL_SOURCE_URL: ${{ matrix.source }}
     steps:
       - name: Cache Linux source
         id: cache-kernel
@@ -161,9 +136,20 @@ jobs:
       - name: Build Linux kernel
         if: steps.cache-kernel.outputs.cache-hit != 'true'
         run: |
-          MAJOR=${KERNEL_VERSION%%.*}
-          wget https://cdn.kernel.org/pub/linux/kernel/v${MAJOR}.x/linux-${KERNEL_VERSION}.tar.xz
-          tar xf linux-${KERNEL_VERSION}.tar.xz
+          # Download kernel source from the provided URL
+          filename=$(basename "$KERNEL_SOURCE_URL")
+          wget "$KERNEL_SOURCE_URL" -O "$filename"
+          
+          # Extract based on file extension
+          if [[ "$filename" == *.tar.xz ]]; then
+            tar xf "$filename"
+          elif [[ "$filename" == *.tar.gz ]]; then
+            tar xzf "$filename"
+          else
+            echo "Unsupported archive format: $filename"
+            exit 1
+          fi
+          
           cd linux-${KERNEL_VERSION}
 
           # Generate the default config
@@ -197,12 +183,12 @@ jobs:
           overwrite: true
 
   test:
-    name: Test - ${{ matrix.kernel-version }} @ ${{ matrix.arg-termination }} ${{ matrix.arg-cipher }}
+    name: Test - ${{ matrix.kernel.version }} @ ${{ matrix.arg-termination }} ${{ matrix.arg-cipher }}
     needs: [prepare-kernel-versions, build-test-binary, build-kernel]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        kernel-version: ${{fromJson(needs.prepare-kernel-versions.outputs.matrix)}}
+        kernel: ${{fromJson(needs.prepare-kernel-versions.outputs.matrix)}}
         arg-termination: ["client", "server"]
         arg-cipher:
           [
@@ -215,7 +201,7 @@ jobs:
           ]
       fail-fast: false
     env:
-      KERNEL_VERSION: ${{ matrix.kernel-version }}
+      KERNEL_VERSION: ${{ matrix.kernel.version }}
       TEST_ARG_TERMINATION: ${{ matrix.arg-termination }}
       TEST_ARG_CIPHER: ${{ matrix.arg-cipher }}
     steps:
