@@ -171,7 +171,7 @@ impl Acceptor {
             .map_err(Error::ExtractSecrets)?;
 
         Ok(StreamExt {
-            inner: Stream::from(
+            inner: Stream::new(
                 socket,
                 secrets,
                 session,
@@ -295,7 +295,7 @@ impl Connector {
             .map_err(Error::ExtractSecrets)?;
 
         Ok(StreamExt {
-            inner: Stream::from(socket, secrets, session, None).map_err(Error::Ktls)?,
+            inner: Stream::new(socket, secrets, session, None).map_err(Error::Ktls)?,
             protocol_version,
             handshake_kind,
         })

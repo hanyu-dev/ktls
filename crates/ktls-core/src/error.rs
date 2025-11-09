@@ -1,5 +1,6 @@
 //! Error related types and implementations.
 
+use std::convert::Infallible;
 use std::fmt::{self, Debug};
 use std::io;
 
@@ -109,6 +110,13 @@ impl From<InvalidMessage> for Error {
 impl From<PeerMisbehaved> for Error {
     fn from(error: PeerMisbehaved) -> Self {
         Self::PeerMisbehaved(error)
+    }
+}
+
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Self {
+        // This can never happen
+        unreachable!()
     }
 }
 

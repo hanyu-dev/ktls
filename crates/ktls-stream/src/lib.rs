@@ -9,8 +9,9 @@ use std::pin::Pin;
 #[cfg(feature = "async-io-tokio")]
 use std::task;
 
+use ktls_core::tls::{DummyTlsSession, ExtractedSecrets};
 use ktls_core::utils::Buffer;
-use ktls_core::{Context, TlsSession};
+use ktls_core::{Context, TlsCryptoInfoRx, TlsCryptoInfoTx, TlsSession};
 #[cfg(feature = "async-io-tokio")]
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -61,20 +62,46 @@ pin_project_lite::pin_project! {
 }
 
 impl<S: AsFd, C: TlsSession> Stream<S, C> {
-    /// Creates a new [`Stream`] from the given socket, TLS session and an
-    /// optional buffer (may be early data received from peer during
-    /// handshake or a pre-allocated buffer).
+    /// Constructs a new [`Stream`] from the provided socket, extracted TLS
+    /// secrets and TLS session context. An optional buffer may be provided for
+    /// early data received during handshake.
     ///
-    /// # Prerequisites
+    /// ## Prerequisites
     ///
-    /// - The socket must have TLS ULP configured with
-    ///   [`setup_ulp`](ktls_core::setup_ulp).
-    /// - The TLS handshake must be completed.
-    pub fn new(socket: S, session: C, buffer: Option<Buffer>) -> Self {
-        Self {
+    /// The socket must have TLS ULP configured with
+    /// [`setup_ulp`](ktls_core::setup_ulp).
+    ///
+    /// ## Errors
+    ///
+    /// Unsupported protocol version or cipher suite, or failure to set up
+    /// kTLS params on the socket.
+    pub fn new<K, E>(
+        socket: S,
+        secrets: K,
+        session: C,
+        buffer: Option<Buffer>,
+    ) -> Result<Self, ktls_core::Error>
+    where
+        ExtractedSecrets: TryFrom<K, Error = E>,
+        ktls_core::Error: From<E>,
+    {
+        let ExtractedSecrets {
+            tx: (seq_tx, secrets_tx),
+            rx: (seq_rx, secrets_rx),
+        } = ExtractedSecrets::try_from(secrets)?;
+
+        let tls_crypto_info_tx =
+            TlsCryptoInfoTx::new(session.protocol_version(), secrets_tx, seq_tx)?;
+
+        let tls_crypto_info_rx =
+            TlsCryptoInfoRx::new(session.protocol_version(), secrets_rx, seq_rx)?;
+
+        ktls_core::setup_tls_params(&socket, &tls_crypto_info_tx, &tls_crypto_info_rx)?;
+
+        Ok(Self {
             inner: socket,
             context: Context::new(session, buffer),
-        }
+        })
     }
 
     /// Returns a [`StreamRefMutRaw`] which provides low-level access to the
@@ -132,59 +159,30 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     }
 }
 
-#[cfg(feature = "shim-rustls")]
-impl<S, Data> Stream<S, rustls::kernel::KernelConnection<Data>>
+impl<S> Stream<S, DummyTlsSession>
 where
     S: AsFd,
-    rustls::kernel::KernelConnection<Data>: TlsSession,
 {
-    /// Constructs a new [`Stream`] [`Stream`] from the provided socket,
-    /// extracted TLS secrets ([`rustls::ExtractedSecrets`]), and TLS
-    /// session context ([`rustls::kernel::KernelConnection`]). An optional
-    /// buffer may be provided for early data received during handshake.
+    #[inline]
+    /// Creates a new [`Stream`] with a [`DummyTlsSession`].
     ///
-    /// The secrets and context must be extracted from a
-    /// [`rustls::client::UnbufferedClientConnection`] or
-    /// [`rustls::client::UnbufferedClientConnection`]. See [`rustls::kernel`]
-    /// module documentation for more details.
+    /// This doesn't require the socket to have TLS ULP configured, we will
+    /// configure it here.
     ///
-    /// ## Prerequisites
-    ///
-    /// The socket must have TLS ULP configured with
-    /// [`setup_ulp`](ktls_core::setup_ulp).
+    /// See also [`Stream::new`].
     ///
     /// ## Errors
     ///
-    /// Unsupported protocol version or cipher suite, or failure to set up
-    /// kTLS params on the socket.
-    pub fn from(
+    /// See [`Stream::new`].
+    pub fn new_dummy(
         socket: S,
-        secrets: rustls::ExtractedSecrets,
-        session: rustls::kernel::KernelConnection<Data>,
+        secrets: ExtractedSecrets,
+        session: DummyTlsSession,
         buffer: Option<Buffer>,
     ) -> Result<Self, ktls_core::Error> {
-        use ktls_core::{TlsCryptoInfoRx, TlsCryptoInfoTx};
+        ktls_core::setup_ulp(&socket)?;
 
-        let rustls::ExtractedSecrets {
-            tx: (seq_tx, secrets_tx),
-            rx: (seq_rx, secrets_rx),
-        } = secrets;
-
-        let tls_crypto_info_tx = TlsCryptoInfoTx::new(
-            session.protocol_version().into(),
-            secrets_tx.try_into()?,
-            seq_tx,
-        )?;
-
-        let tls_crypto_info_rx = TlsCryptoInfoRx::new(
-            session.protocol_version().into(),
-            secrets_rx.try_into()?,
-            seq_rx,
-        )?;
-
-        ktls_core::setup_tls_params(&socket, &tls_crypto_info_tx, &tls_crypto_info_rx)?;
-
-        Ok(Self::new(socket, session, buffer))
+        Self::new(socket, secrets, session, buffer)
     }
 }
 

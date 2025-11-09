@@ -1,5 +1,7 @@
 //! Shim layer for TLS protocol implementations.
 
+use std::io;
+
 use crate::error::{Error, InvalidMessage, Result};
 use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 
@@ -125,6 +127,20 @@ pub enum ConnectionTrafficSecrets {
         /// Salt
         salt: [u8; libc::TLS_CIPHER_ARIA_GCM_256_SALT_SIZE],
     },
+}
+
+#[allow(clippy::exhaustive_structs)]
+/// Secrets for transmitting/receiving data over a TLS session.
+///
+/// After performing a handshake with rustls, these secrets can be extracted
+/// to configure kTLS for a socket, and have the kernel take over encryption
+/// and/or decryption.
+pub struct ExtractedSecrets {
+    /// sequence number and secrets for the "tx" (transmit) direction
+    pub tx: (u64, ConnectionTrafficSecrets),
+
+    /// sequence number and secrets for the "rx" (receive) direction
+    pub rx: (u64, ConnectionTrafficSecrets),
 }
 
 /// A macro which defines an enum type.
@@ -424,15 +440,77 @@ pub trait TlsSession {
     ///
     /// By default, this method returns an
     /// [`InvalidContentType`](InvalidMessage::InvalidContentType) error.
+    ///
+    /// # Errors
+    ///
+    /// Various errors may be returned depending on the implementation.
     fn handle_unknown_message(&mut self, _content_type: u8, _payload: &[u8]) -> Result<()> {
         Err(Error::InvalidMessage(InvalidMessage::InvalidContentType))
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+/// A dummy TLS session implementation which does nothing.
+pub struct DummyTlsSession {
+    peer: Peer,
+    protocol_version: ProtocolVersion,
+}
+
+/// See [`DummyTlsSession`].
+pub static DUMMY_TLS_13_SESSION_CLIENT: DummyTlsSession = DummyTlsSession {
+    peer: Peer::Client,
+    protocol_version: ProtocolVersion::TLSv1_3,
+};
+
+/// See [`DummyTlsSession`].
+pub static DUMMY_TLS_13_SESSION_SERVER: DummyTlsSession = DummyTlsSession {
+    peer: Peer::Server,
+    protocol_version: ProtocolVersion::TLSv1_3,
+};
+
+/// See [`DummyTlsSession`].
+pub static DUMMY_TLS_12_SESSION_CLIENT: DummyTlsSession = DummyTlsSession {
+    peer: Peer::Client,
+    protocol_version: ProtocolVersion::TLSv1_2,
+};
+
+/// See [`DummyTlsSession`].
+pub static DUMMY_TLS_12_SESSION_SERVER: DummyTlsSession = DummyTlsSession {
+    peer: Peer::Server,
+    protocol_version: ProtocolVersion::TLSv1_2,
+};
+
+impl TlsSession for DummyTlsSession {
+    fn peer(&self) -> Peer {
+        self.peer
+    }
+
+    fn protocol_version(&self) -> ProtocolVersion {
+        self.protocol_version
+    }
+
+    fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx> {
+        Err(Error::KeyUpdateFailed(io::Error::other(
+            "Dummy TLS session does not support key updates",
+        )))
+    }
+
+    fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx> {
+        Err(Error::KeyUpdateFailed(io::Error::other(
+            "Dummy TLS session does not support key updates",
+        )))
+    }
+
+    fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()> {
+        Err(Error::HandleNewSessionTicketFailed(io::Error::other(
+            "Dummy TLS session does not support new session tickets",
+        )))
+    }
+}
+
 #[cfg(feature = "_shim")]
 mod shim {
-    use std::io;
-
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
     #[cfg(feature = "shim-rustls")]
@@ -525,6 +603,27 @@ mod shim {
     impl From<rustls::ProtocolVersion> for ProtocolVersion {
         fn from(value: rustls::ProtocolVersion) -> Self {
             Self::from_int(value.into())
+        }
+    }
+
+    #[cfg(feature = "shim-rustls")]
+    impl TryFrom<rustls::ExtractedSecrets> for ExtractedSecrets {
+        type Error = Error;
+
+        /// The secrets and context must be extracted from a
+        /// [`rustls::client::UnbufferedClientConnection`] or
+        /// [`rustls::client::UnbufferedClientConnection`]. See
+        /// [`rustls::kernel`] module documentation for more details.
+        fn try_from(secrets: rustls::ExtractedSecrets) -> Result<Self, Self::Error> {
+            let rustls::ExtractedSecrets {
+                tx: (seq_tx, secrets_tx),
+                rx: (seq_rx, secrets_rx),
+            } = secrets;
+
+            Ok(Self {
+                tx: (seq_tx, ConnectionTrafficSecrets::try_from(secrets_tx)?),
+                rx: (seq_rx, ConnectionTrafficSecrets::try_from(secrets_rx)?),
+            })
         }
     }
 

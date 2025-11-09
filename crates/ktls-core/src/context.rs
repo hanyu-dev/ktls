@@ -309,7 +309,7 @@ impl<C: TlsSession> Context<C> {
                     unknown_content_type,
                     self.buffer.unfilled_initialized(),
                 ) {
-                    Ok(_) => {
+                    Ok(()) => {
                         crate::trace!(
                             "Handled unknown content type message: \
                              content_type={unknown_content_type:?}",
