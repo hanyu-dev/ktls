@@ -40,8 +40,11 @@ tls13-key-update = []
 # Enable kernel TLS support probe utilities
 probe-ktls-compatibility = []
 
+# Internal feature for shim layers
+_shim = []
+
 # Shim layer for `rustls` crate
-shim-rustls = ["dep:rustls"]
+shim-rustls = ["_shim", "dep:rustls"]
 
 [lints]
 workspace = true

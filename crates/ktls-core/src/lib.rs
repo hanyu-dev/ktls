@@ -9,7 +9,6 @@ mod log;
 #[cfg(feature = "probe-ktls-compatibility")]
 pub mod probe;
 pub mod setup;
-pub mod shim;
 pub mod tls;
 pub mod utils;
 

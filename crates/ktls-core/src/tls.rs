@@ -1,69 +1,7 @@
 //! Shim layer for TLS protocol implementations.
 
-use crate::error::{InvalidMessage, Result};
+use crate::error::{Error, InvalidMessage, Result};
 use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
-
-/// TLS session context abstraction.
-///
-/// The kernel only handles TLS encryption and decryption, while the TLS
-/// implementation should provide the necessary TLS session context management,
-/// including key updates and handling of `NewSessionTicket` messages.
-pub trait TlsSession {
-    /// Retrieves which peer this session represents (client or server).
-    fn peer(&self) -> Peer;
-
-    /// Retrieves the protocol version agreed with the peer.
-    fn protocol_version(&self) -> ProtocolVersion;
-
-    /// Update the traffic secret used for encrypting messages sent to the peer.
-    ///
-    /// Returns the new traffic secret and initial sequence number to use.
-    ///
-    /// This method is called once we send a TLS 1.3 key update message to the
-    /// peer.
-    ///
-    /// # Errors
-    ///
-    /// Various errors may be returned depending on the implementation.
-    fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx>;
-
-    /// Update the traffic secret used for decrypting messages received from the
-    /// peer.
-    ///
-    /// Returns the new traffic secret and initial sequence number to use.
-    ///
-    /// This method is called once we receive a TLS 1.3 key update message from
-    /// the peer.
-    ///
-    /// # Errors
-    ///
-    /// Various errors may be returned depending on the implementation.
-    fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx>;
-
-    /// Handles a `NewSessionTicket` message received from the peer.
-    ///
-    /// This method expects to be passed the inner payload of the handshake
-    /// message. This means that you will need to parse the header of the
-    /// handshake message in order to determine the correct payload to pass in.
-    /// The message format is described in [RFC 8446 section 4]. `payload`
-    /// should not include the `msg_type` or `length` fields.
-    ///
-    /// [RFC 8446 section 4]: https://datatracker.ietf.org/doc/html/rfc8446#section-4
-    ///
-    /// # Errors
-    ///
-    /// Various errors may be returned depending on the implementation.
-    fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()>;
-
-    #[inline]
-    /// Handles the message with unknown content type received from the peer.
-    ///
-    /// By default, this method returns an
-    /// [`InvalidContentType`](InvalidMessage::InvalidContentType) error.
-    fn handle_unknown_message(&mut self, _content_type: u8, _payload: &[u8]) -> Result<()> {
-        Err(InvalidMessage::InvalidContentType.into())
-    }
-}
 
 #[derive(zeroize_derive::ZeroizeOnDrop)]
 /// An AEAD key of fixed size.
@@ -427,4 +365,221 @@ pub enum Peer {
 
     /// The server.
     Server,
+}
+
+/// TLS session context abstraction.
+///
+/// The kernel only handles TLS encryption and decryption, while the TLS
+/// implementation should provide the necessary TLS session context management,
+/// including key updates and handling of `NewSessionTicket` messages.
+pub trait TlsSession {
+    /// Retrieves which peer this session represents (client or server).
+    fn peer(&self) -> Peer;
+
+    /// Retrieves the protocol version agreed with the peer.
+    fn protocol_version(&self) -> ProtocolVersion;
+
+    /// Update the traffic secret used for encrypting messages sent to the peer.
+    ///
+    /// Returns the new traffic secret and initial sequence number to use.
+    ///
+    /// This method is called once we send a TLS 1.3 key update message to the
+    /// peer.
+    ///
+    /// # Errors
+    ///
+    /// Various errors may be returned depending on the implementation.
+    fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx>;
+
+    /// Update the traffic secret used for decrypting messages received from the
+    /// peer.
+    ///
+    /// Returns the new traffic secret and initial sequence number to use.
+    ///
+    /// This method is called once we receive a TLS 1.3 key update message from
+    /// the peer.
+    ///
+    /// # Errors
+    ///
+    /// Various errors may be returned depending on the implementation.
+    fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx>;
+
+    /// Handles a `NewSessionTicket` message received from the peer.
+    ///
+    /// This method expects to be passed the inner payload of the handshake
+    /// message. This means that you will need to parse the header of the
+    /// handshake message in order to determine the correct payload to pass in.
+    /// The message format is described in [RFC 8446 section 4]. `payload`
+    /// should not include the `msg_type` or `length` fields.
+    ///
+    /// [RFC 8446 section 4]: https://datatracker.ietf.org/doc/html/rfc8446#section-4
+    ///
+    /// # Errors
+    ///
+    /// Various errors may be returned depending on the implementation.
+    fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()>;
+
+    #[inline]
+    /// Handles the message with unknown content type received from the peer.
+    ///
+    /// By default, this method returns an
+    /// [`InvalidContentType`](InvalidMessage::InvalidContentType) error.
+    fn handle_unknown_message(&mut self, _content_type: u8, _payload: &[u8]) -> Result<()> {
+        Err(Error::InvalidMessage(InvalidMessage::InvalidContentType))
+    }
+}
+
+#[cfg(feature = "_shim")]
+mod shim {
+    use std::io;
+
+    use super::*;
+
+    #[cfg(feature = "shim-rustls")]
+    impl TlsSession for rustls::kernel::KernelConnection<rustls::client::ClientConnectionData> {
+        fn peer(&self) -> Peer {
+            Peer::Client
+        }
+
+        fn protocol_version(&self) -> ProtocolVersion {
+            self.protocol_version().into()
+        }
+
+        #[track_caller]
+        fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx> {
+            let (seq, secrets) = self
+                .update_tx_secret()
+                .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
+
+            TlsCryptoInfoTx::new(
+                self.protocol_version().into(),
+                ConnectionTrafficSecrets::try_from(secrets)?,
+                seq,
+            )
+        }
+
+        #[track_caller]
+        fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx> {
+            let (seq, secrets) = self
+                .update_rx_secret()
+                .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
+
+            TlsCryptoInfoRx::new(
+                self.protocol_version().into(),
+                ConnectionTrafficSecrets::try_from(secrets)?,
+                seq,
+            )
+        }
+
+        #[track_caller]
+        fn handle_new_session_ticket(&mut self, payload: &[u8]) -> Result<()> {
+            self.handle_new_session_ticket(payload)
+                .map_err(|e| Error::HandleNewSessionTicketFailed(io::Error::other(e)))
+        }
+    }
+
+    #[cfg(feature = "shim-rustls")]
+    impl TlsSession for rustls::kernel::KernelConnection<rustls::server::ServerConnectionData> {
+        fn peer(&self) -> Peer {
+            Peer::Server
+        }
+
+        fn protocol_version(&self) -> ProtocolVersion {
+            self.protocol_version().into()
+        }
+
+        #[track_caller]
+        fn update_tx_secret(&mut self) -> Result<TlsCryptoInfoTx> {
+            let (seq, secrets) = self
+                .update_tx_secret()
+                .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
+
+            TlsCryptoInfoTx::new(
+                self.protocol_version().into(),
+                ConnectionTrafficSecrets::try_from(secrets)?,
+                seq,
+            )
+        }
+
+        #[track_caller]
+        fn update_rx_secret(&mut self) -> Result<TlsCryptoInfoRx> {
+            let (seq, secrets) = self
+                .update_rx_secret()
+                .map_err(|e| Error::KeyUpdateFailed(io::Error::other(e)))?;
+
+            TlsCryptoInfoRx::new(
+                self.protocol_version().into(),
+                ConnectionTrafficSecrets::try_from(secrets)?,
+                seq,
+            )
+        }
+
+        fn handle_new_session_ticket(&mut self, _payload: &[u8]) -> Result<()> {
+            Err(Error::HandleNewSessionTicketFailed(io::Error::other(
+                "Server should not receive new session ticket",
+            )))
+        }
+    }
+
+    #[cfg(feature = "shim-rustls")]
+    impl From<rustls::ProtocolVersion> for ProtocolVersion {
+        fn from(value: rustls::ProtocolVersion) -> Self {
+            Self::from_int(value.into())
+        }
+    }
+
+    #[cfg(feature = "shim-rustls")]
+    impl TryFrom<rustls::ConnectionTrafficSecrets> for ConnectionTrafficSecrets {
+        type Error = Error;
+
+        #[track_caller]
+        fn try_from(value: rustls::ConnectionTrafficSecrets) -> Result<Self, Self::Error> {
+            match value {
+                rustls::ConnectionTrafficSecrets::Aes128Gcm { key, iv } => Ok(Self::Aes128Gcm {
+                    key: AeadKey::new(
+                        key.as_ref()
+                            .try_into()
+                            .expect("key length mismatch"),
+                    ),
+                    iv: iv.as_ref()[4..]
+                        .try_into()
+                        .expect("iv length mismatch"),
+                    salt: iv.as_ref()[..4]
+                        .try_into()
+                        .expect("salt length mismatch"),
+                }),
+                rustls::ConnectionTrafficSecrets::Aes256Gcm { key, iv } => Ok(Self::Aes256Gcm {
+                    key: AeadKey::new(
+                        key.as_ref()
+                            .try_into()
+                            .expect("key length mismatch"),
+                    ),
+                    iv: iv.as_ref()[4..]
+                        .try_into()
+                        .expect("iv length mismatch"),
+                    salt: iv.as_ref()[..4]
+                        .try_into()
+                        .expect("salt length mismatch"),
+                }),
+                rustls::ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv } => {
+                    Ok(Self::Chacha20Poly1305 {
+                        key: AeadKey::new(
+                            key.as_ref()
+                                .try_into()
+                                .expect("key length mismatch"),
+                        ),
+                        iv: iv
+                            .as_ref()
+                            .try_into()
+                            .expect("iv length mismatch"),
+                        salt: [],
+                    })
+                }
+                secrets => Err(Error::CryptoMaterial(io::Error::other(format!(
+                    "The given crypto material is not supported by the running kernel: {}",
+                    std::any::type_name_of_val(&secrets)
+                )))),
+            }
+        }
+    }
 }
