@@ -1,19 +1,37 @@
 #![doc = include_str!("../README.md")]
 
 mod log;
+pub mod prelude {
+    //! A "prelude".
+    //!
+    //! This prelude is similar to the standard library's prelude in that you'll
+    //! almost always want to import its entire contents, but unlike the
+    //! standard library's prelude you'll have to do so manually:
+    //!
+    //! ```
+    //! # #[allow(unused_imports)]
+    //! use ktls_stream::prelude::*;
+    //! ```
+    //!
+    //! The prelude may grow over time as additional items see ubiquitous use.
+    //!
+    //! Generally, you don't need to add `ktls-core` as a dependency in your
+    //! `Cargo.toml` unless you are implementing custom TLS session types, etc.
+
+    pub use ktls_core::setup_ulp;
+    #[cfg(feature = "probe-ktls-compatibility")]
+    pub use ktls_core::{Compatibilities, Compatibility};
+
+    pub use crate::Stream;
+}
 
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-#[cfg(feature = "async-io-tokio")]
-use std::pin::Pin;
-#[cfg(feature = "async-io-tokio")]
-use std::task;
 
-use ktls_core::tls::{DummyTlsSession, ExtractedSecrets};
-use ktls_core::utils::Buffer;
-use ktls_core::{Context, TlsCryptoInfoRx, TlsCryptoInfoTx, TlsSession};
-#[cfg(feature = "async-io-tokio")]
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use ktls_core::{
+    setup_tls_params, setup_ulp, Buffer, Context, DummyTlsSession, ExtractedSecrets,
+    TlsCryptoInfoRx, TlsCryptoInfoTx, TlsSession,
+};
 
 pin_project_lite::pin_project! {
     #[derive(Debug)]
@@ -62,14 +80,13 @@ pin_project_lite::pin_project! {
 }
 
 impl<S: AsFd, C: TlsSession> Stream<S, C> {
-    /// Constructs a new [`Stream`] from the provided socket, extracted TLS
-    /// secrets and TLS session context. An optional buffer may be provided for
-    /// early data received during handshake.
+    /// Constructs a new [`Stream`] from the provided `socket`, extracted TLS
+    /// `secrets` and TLS `session` context. An optional `buffer` may be
+    /// provided for early data received during handshake.
     ///
     /// ## Prerequisites
     ///
-    /// The socket must have TLS ULP configured with
-    /// [`setup_ulp`](ktls_core::setup_ulp).
+    /// The socket must have TLS ULP configured with [`setup_ulp`].
     ///
     /// ## Errors
     ///
@@ -96,7 +113,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
         let tls_crypto_info_rx =
             TlsCryptoInfoRx::new(session.protocol_version(), secrets_rx, seq_rx)?;
 
-        ktls_core::setup_tls_params(&socket, &tls_crypto_info_tx, &tls_crypto_info_rx)?;
+        setup_tls_params(&socket, &tls_crypto_info_tx, &tls_crypto_info_rx)?;
 
         Ok(Self {
             inner: socket,
@@ -104,7 +121,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
         })
     }
 
-    /// Returns a [`StreamRefMutRaw`] which provides low-level access to the
+    /// Returns a [`RawStreamMut`] which provides low-level access to the
     /// inner socket.
     ///
     /// This requires a mutable reference to the [`Stream`] to ensure a
@@ -119,11 +136,10 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     ///
     ///   - Early data received during handshake.
     ///   - Application data received due to improper usage of
-    ///     [`StreamRefMutRaw::handle_io_error`].
+    ///     [`RawStreamMut::handle_io_error`].
     ///
     /// * The caller **MAY** handle any [`io::Error`]s returned by direct I/O
-    ///   operations on the inner socket with
-    ///   [`StreamRefMutRaw::handle_io_error`].
+    ///   operations on the inner socket with [`RawStreamMut::handle_io_error`].
     ///
     /// * The caller **MUST NOT** *shutdown* the inner socket directly, which
     ///   will lead to undefined behaviours.
@@ -131,7 +147,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
     /// # Errors
     ///
     /// See [`AccessRawStreamError`].
-    pub fn as_mut_raw(&mut self) -> Result<StreamRefMutRaw<'_, S, C>, AccessRawStreamError> {
+    pub fn as_mut_raw(&mut self) -> Result<RawStreamMut<'_, S, C>, AccessRawStreamError> {
         if let Some(buffer) = self.context.buffer_mut().drain() {
             return Err(AccessRawStreamError::HasBufferedData(buffer));
         }
@@ -141,7 +157,7 @@ impl<S: AsFd, C: TlsSession> Stream<S, C> {
             return Err(AccessRawStreamError::Closed);
         }
 
-        Ok(StreamRefMutRaw { this: self })
+        Ok(RawStreamMut { this: self })
     }
 
     #[cfg(feature = "tls13-key-update")]
@@ -180,7 +196,7 @@ where
         session: DummyTlsSession,
         buffer: Option<Buffer>,
     ) -> Result<Self, ktls_core::Error> {
-        ktls_core::setup_ulp(&socket)?;
+        setup_ulp(&socket)?;
 
         Self::new(socket, secrets, session, buffer)
     }
@@ -304,16 +320,16 @@ macro_rules! handle_ret_async {
 }
 
 #[cfg(feature = "async-io-tokio")]
-impl<S, C> AsyncRead for Stream<S, C>
+impl<S, C> tokio::io::AsyncRead for Stream<S, C>
 where
-    S: AsFd + AsyncRead,
+    S: AsFd + tokio::io::AsyncRead,
     C: TlsSession,
 {
     fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> task::Poll<io::Result<()>> {
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
         let mut this = self.project();
 
         handle_ret_async!(this, {
@@ -332,13 +348,13 @@ where
             });
 
             if read_from_buffer.is_some() {
-                return task::Poll::Ready(Ok(()));
+                return std::task::Poll::Ready(Ok(()));
             }
 
             if this.context.state().is_read_closed() {
                 crate::trace!("Read closed, returning EOF");
 
-                return task::Poll::Ready(Ok(()));
+                return std::task::Poll::Ready(Ok(()));
             }
 
             // Retry is OK, the implementation of `poll_read` requires no data will be
@@ -349,37 +365,40 @@ where
 }
 
 #[cfg(feature = "async-io-tokio")]
-impl<S, C> AsyncWrite for Stream<S, C>
+impl<S, C> tokio::io::AsyncWrite for Stream<S, C>
 where
-    S: AsFd + AsyncWrite,
+    S: AsFd + tokio::io::AsyncWrite,
     C: TlsSession,
 {
     fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
         buf: &[u8],
-    ) -> task::Poll<io::Result<usize>> {
+    ) -> std::task::Poll<io::Result<usize>> {
         let mut this = self.project();
 
         handle_ret_async!(this, {
             if this.context.state().is_write_closed() {
                 crate::trace!("Write closed, returning EOF");
 
-                return task::Poll::Ready(Ok(0));
+                return std::task::Poll::Ready(Ok(0));
             }
 
             this.inner.as_mut().poll_write(cx, buf)
         })
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<io::Result<()>> {
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
         let mut this = self.project();
 
         handle_ret_async!(this, {
             if this.context.state().is_write_closed() {
                 crate::trace!("Write closed, skipping flush");
 
-                return task::Poll::Ready(Ok(()));
+                return std::task::Poll::Ready(Ok(()));
             }
 
             this.inner.as_mut().poll_flush(cx)
@@ -387,9 +406,9 @@ where
     }
 
     fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<io::Result<()>> {
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
         let this = self.project();
 
         let is_write_closed = this.context.state().is_write_closed();
@@ -398,7 +417,7 @@ where
         this.context.shutdown(&*this.inner);
 
         if is_write_closed {
-            task::Poll::Ready(Ok(()))
+            std::task::Poll::Ready(Ok(()))
         } else {
             this.inner.poll_shutdown(cx)
         }
@@ -406,11 +425,11 @@ where
 }
 
 /// See [`Stream::as_mut_raw`].
-pub struct StreamRefMutRaw<'a, S: AsFd, C: TlsSession> {
+pub struct RawStreamMut<'a, S: AsFd, C: TlsSession> {
     this: &'a mut Stream<S, C>,
 }
 
-impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
+impl<S: AsFd, C: TlsSession> RawStreamMut<'_, S, C> {
     /// Performs read operation on the inner socket, handles possible errors
     /// with [`Context::handle_io_error`] and retries the operation if the
     /// error is recoverable (see [`Context::handle_io_error`] for details).
@@ -483,7 +502,7 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
     }
 
     #[inline]
-    /// Since [`StreamRefMutRaw`] provides direct access to the inner socket,
+    /// Since [`RawStreamMut`] provides direct access to the inner socket,
     /// the caller **MUST** handle any possible I/O errors returned by I/O
     /// operations on the inner socket with this method.
     ///
@@ -499,14 +518,14 @@ impl<S: AsFd, C: TlsSession> StreamRefMutRaw<'_, S, C> {
     }
 }
 
-impl<S: AsFd, C: TlsSession> AsFd for StreamRefMutRaw<'_, S, C> {
+impl<S: AsFd, C: TlsSession> AsFd for RawStreamMut<'_, S, C> {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.this.inner.as_fd()
     }
 }
 
-impl<S: AsFd, C: TlsSession> AsRawFd for StreamRefMutRaw<'_, S, C> {
+impl<S: AsFd, C: TlsSession> AsRawFd for RawStreamMut<'_, S, C> {
     #[inline]
     fn as_raw_fd(&self) -> RawFd {
         self.this.inner.as_fd().as_raw_fd()
@@ -526,6 +545,6 @@ pub enum AccessRawStreamError {
     ///
     /// - Early data received during handshake.
     /// - Application data received due to improper usage of
-    ///   [`StreamRefMutRaw::handle_io_error`].
+    ///   [`RawStreamMut::handle_io_error`].
     HasBufferedData(Vec<u8>),
 }

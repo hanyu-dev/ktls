@@ -22,7 +22,7 @@ pub struct Compatibilities {
 impl Compatibilities {
     /// Probes the current Linux kernel for kTLS cipher suites compatibility.
     ///
-    /// Returns `Ok(None)` if the running kernel does not support kTLS, i.e.,
+    /// Returns `Ok(None)` if the running kernel does not support kTLS, e.g.,
     /// `tls` module is not available. If the kernel is modern enough (at least
     /// 5.4), it should support kTLS but might not have `tls` module loaded.
     ///
@@ -32,7 +32,7 @@ impl Compatibilities {
     /// due to kTLS being unsupported, while the `tls` module can be loaded
     /// / unloaded at runtime.
     ///
-    /// The caller should check the returned `Compatibility`s with
+    /// The caller may check the returned `Compatibility`s with
     /// [`Compatibility::is_unsupported`]  to see whether the desired TLS
     /// version is totally unsupported.
     ///
@@ -76,12 +76,12 @@ impl Compatibilities {
                 )
                 .unwrap()
                 .set(&stream)
-                .inspect_err(|err| {
+                .inspect_err(|_err| {
                     crate::trace!(
                         "{} {}: Not suitable: {}",
                         stringify!($ver),
                         stringify!($cipher),
-                        err
+                        _err
                     );
                 })
                 .is_ok()

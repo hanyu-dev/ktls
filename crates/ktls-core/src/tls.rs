@@ -6,7 +6,10 @@ use crate::error::{Error, InvalidMessage, Result};
 use crate::setup::{TlsCryptoInfoRx, TlsCryptoInfoTx};
 
 #[derive(zeroize_derive::ZeroizeOnDrop)]
-/// An AEAD key of fixed size.
+/// An AEAD key with fixed size.
+///
+/// This is a low-level structure, usually you don't need to use it directly
+/// unless you are implementing a higher-level abstraction.
 pub struct AeadKey<const N: usize>(pub(crate) [u8; N]);
 
 impl<const N: usize> core::fmt::Debug for AeadKey<N> {
@@ -31,6 +34,9 @@ impl<const N: usize> From<[u8; N]> for AeadKey<N> {
 
 #[non_exhaustive]
 /// Secrets used to encrypt/decrypt data in a TLS session.
+///
+/// This is a low-level structure, usually you don't need to use it directly
+/// unless you are implementing a higher-level abstraction.
 pub enum ConnectionTrafficSecrets {
     /// Secrets for the `AES_128_GCM` AEAD algorithm
     Aes128Gcm {
@@ -135,6 +141,11 @@ pub enum ConnectionTrafficSecrets {
 /// After performing a handshake with rustls, these secrets can be extracted
 /// to configure kTLS for a socket, and have the kernel take over encryption
 /// and/or decryption.
+///
+/// This is a low-level structure, usually you don't need to use it directly
+/// unless you are implementing a higher-level abstraction.
+///
+/// This is copied from rustls.
 pub struct ExtractedSecrets {
     /// sequence number and secrets for the "tx" (transmit) direction
     pub tx: (u64, ConnectionTrafficSecrets),

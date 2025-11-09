@@ -4,17 +4,17 @@
 //! Once the TCP connection is established, sets the TLS ULP, which allows us to
 //! set/get TLS socket options.
 //!
-//! This module provides the [`setup_ulp`] function, which sets the ULP (Upper
-//! Layer Protocol) to TLS for a TCP socket. The user can also determine whether
-//! the kernel supports kTLS with [`setup_ulp`].
+//! This module provides the [`setup_ulp`] function, which sets the TLS ULP over
+//! a TCP socket. The caller may check if the error returned by this function is
+//! due to kTLS being unsupported with [`Error::is_ktls_unsupported`].
 //!
 //! After the TLS handshake is completed, we have all the parameters required to
 //! move the data-path to the kernel. There is a separate socket option for
 //! moving the transmit and the receive into the kernel.
 //!
 //! This module provides the low-level [`setup_tls_params`] function, which sets
-//! the Kernel TLS parameters on the TCP socket, allowing the kernel to handle
-//! encryption and decryption of the TLS data.
+//! the kernel TLS's parameters over the TCP socket, allowing the kernel to
+//! handle encryption and decryption of the TLS data.
 
 use std::marker::PhantomData;
 use std::os::fd::{AsFd, AsRawFd};
@@ -44,8 +44,12 @@ pub fn setup_ulp<S: AsFd>(socket: &S) -> Result<()> {
 
 /// Sets the kTLS parameters on the socket after the TLS handshake is completed.
 ///
-/// Notes that most kernels do not support setting up TLS crypto materials
-/// twice more times.
+/// Notes that only recent kernels (6.12 or later?) support setting up the kTLS
+/// parameters multiple times. i.e., TLS 1.3 key update is supported only on
+/// these kernels.
+///
+/// This is a low-level function, usually you don't need to call it directly
+/// unless you are implementing a higher-level abstraction.
 ///
 /// ## Errors
 ///
@@ -67,6 +71,9 @@ pub fn setup_tls_params<S: AsFd>(
 ///
 /// This is originated from the `nix` crate, which currently does not support
 /// `AES-128-CCM`, `SM4-*` or `ARIA-*`, so we implement our own version here.
+///
+/// This is a low-level structure, usually you don't need to use it directly
+/// unless you are implementing a higher-level abstraction.
 pub struct TlsCryptoInfo<D> {
     inner: TlsCryptoInfoImpl,
     _direction: PhantomData<D>,
@@ -117,7 +124,7 @@ impl TlsCryptoInfoTx {
     /// direction.
     ///
     /// This is a low-level function, usually you don't need to call it
-    /// directly.
+    /// directly unless you are implementing a higher-level abstraction.
     ///
     /// # Errors
     ///

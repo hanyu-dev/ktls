@@ -38,7 +38,7 @@ impl From<Vec<u8>> for Buffer {
 impl Buffer {
     #[inline]
     #[must_use]
-    /// Creates a new [`Buffer`] from the given bytes slice.
+    /// Creates a new [`Buffer`] from the given vec.
     pub fn new(buffer: Vec<u8>) -> Self {
         Self {
             inner: buffer,
@@ -101,7 +101,7 @@ impl Buffer {
                 // length.
                 self.offset = self.offset.saturating_add(n.get());
             }
-            Some(n) => panic!(
+            Some(n) => unreachable!(
                 "The closure read more bytes than available: read = {}, available = {}",
                 n,
                 unread.len()
@@ -183,7 +183,7 @@ impl Buffer {
     pub(crate) unsafe fn assume_init_additional(&mut self, cnt: usize) {
         let unfilled_initialized = self.unfilled_initialized + cnt;
 
-        debug_assert!(self.inner.len() + unfilled_initialized <= self.inner.capacity());
+        assert!(self.inner.len() + unfilled_initialized <= self.inner.capacity());
 
         self.unfilled_initialized = unfilled_initialized;
     }
@@ -193,7 +193,7 @@ impl Buffer {
     pub(crate) fn set_filled_all(&mut self) {
         let initialized = self.inner.len() + self.unfilled_initialized;
 
-        debug_assert!(initialized <= self.inner.capacity());
+        assert!(initialized <= self.inner.capacity());
 
         #[allow(unsafe_code)]
         // SAFETY: We have ensured that the unfilled part is initialized, and the length is valid.

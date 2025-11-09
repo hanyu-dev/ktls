@@ -15,6 +15,9 @@ use crate::utils::Buffer;
 
 #[derive(Debug)]
 /// The context for managing a kTLS connection.
+///
+/// This is a low-level structure, usually you don't need to use it directly
+/// unless you are implementing a higher-level abstraction.
 pub struct Context<C: TlsSession> {
     // State of the current kTLS connection
     state: State,

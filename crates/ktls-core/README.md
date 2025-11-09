@@ -31,7 +31,7 @@ We perform daily CI tests against the following kernel versions:
 | 5.4.x (LTS)  |  5.4.181  |
 
 - For LTS versions, we test against the latest patch.
-- Have simply tested the minimum applicable kernel version, and listed above, though lacking CI testing guarantees.
+- Have simply tested the minimum applicable kernel version, and listed above.
 
   We recommend using the latest Linux kernel, at least 6.6 LTS, for better support of kTLS.
 

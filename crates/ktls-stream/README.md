@@ -17,35 +17,32 @@ This crate is built on top of [`ktls-core`](https://crates.io/crates/ktls-core) 
 
 Setting up kTLS offload generally involves these steps:
 
-```rust,no_run
+```rust
 use tokio::net::TcpStream;
+
+// Step 0 (Optional): You may probe kernel TLS compatibility in advance
+let compatibilities = ktls_stream::Compatibilities::probe().expect("failed to probe ktls compatibility");
 
 // Step 1: Creates a `TcpStream` (or something else like `UnixStream`).
 let stream = TcpStream::connect("www.example.com:443").await.expect("failed to connect");
 
 // Step 2: Configures TLS User Level Protocol (ULP) on the socket.
-if let Err(e) = ktls_core::setup_ulp(&stream) {
+if let Err(e) = ktls_stream::setup_ulp(&stream) {
     if e.is_ktls_unsupported() {
         // You can fallback to general TLS implementation (omitted here).
+        ...
     } else {
-        panic!("failed to set TLS ULP: {e}");
+        // Handle other errors (omitted here).
+        ...
     }
 }
 
 // Step 3: Performs TLS handshake using your preferred TLS library over the socket.
-// (omitted here)
-let (extracted_secrets, early_data_received) = handshake(&stream, ...).await.expect("failed to perform TLS handshake");
+// (omitted here) and extracts the crypto materials after handshake completion.
+let (extracted_secrets, tls_session, early_data_received) = handshake(&stream, ...).await.expect("failed to perform TLS handshake");
 
-// Step 4: Extracts the crypto materials after handshake completion.
-// (omitted here)
-let (tls_session, tls_crypto_info_tx, tls_crypto_info_rx) = extract_tls_crypto_info(&extracted_secrets)
-    .expect("failed to extract TLS crypto info");
-
-// Step 5: Sets the kTLS parameters on the socket after the TLS handshake is completed.
-ktls_core::setup_tls_params(&stream, &tls_crypto_info_tx, &tls_crypto_info_rx).expect("failed to set kTLS parameters");
-
-// Step 6: Creates a `Stream` using the configured socket and crypto materials.
-let mut stream = ktls_stream::Stream::new(stream, tls_session, Some(early_data_received))
+// Step 4: Creates a `Stream` using the configured socket and crypto materials.
+let mut stream = ktls_stream::Stream::new(stream, extracted_secrets, tls_session, Some(early_data_received))
     .expect("failed to create ktls stream");
 
 // Now you can use the `Stream` as a drop-in replacement of the original `TcpStream`.
@@ -70,7 +67,7 @@ We perform daily CI tests against the following kernel versions:
 | 5.4.x (LTS)  |  5.4.181  |
 
 - For LTS versions, we test against the latest patch.
-- Have simply tested the minimum applicable kernel version, and listed above, though lacking CI testing guarantees.
+- Have simply tested the minimum applicable kernel version, and listed above.
 
   We recommend using the latest Linux kernel, at least 6.6 LTS, for better support of kTLS.
 
